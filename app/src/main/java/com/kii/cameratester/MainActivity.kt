@@ -21,8 +21,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -133,9 +136,12 @@ fun CameraExampleApp() {
 
 @Composable
 fun SimpleCameraExample() {
+    val context = LocalContext.current
     var cameraManager by remember { mutableStateOf<CameraManager?>(null) }
     var sharpness by remember { mutableStateOf<Double?>(null) }
     var brightness by remember { mutableStateOf<Double?>(null) }
+    var capturedImageInfo by remember { mutableStateOf<com.kii.camera.CapturedImageInfo?>(null) }
+    var showCaptureInfo by remember { mutableStateOf(false) }
 
     // 선명도 및 밝기 측정
     LaunchedEffect(cameraManager) {
@@ -170,6 +176,28 @@ fun SimpleCameraExample() {
                 .padding(16.dp)
         )
 
+        // 캡처 버튼 (우하단)
+        CaptureButton(
+            onClick = {
+                cameraManager?.let { manager ->
+                    CoroutineScope(Dispatchers.Main).launch {
+                        try {
+                            val outputDir = context.getExternalFilesDir(null) ?: context.filesDir
+                            val info = manager.capturePhoto(outputDir)
+                            capturedImageInfo = info
+                            showCaptureInfo = true
+                            Logger.d("MainActivity", "Photo captured: $info")
+                        } catch (e: Exception) {
+                            Logger.e("MainActivity", "Failed to capture photo", e)
+                        }
+                    }
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+        )
+
         // 카메라 정보 (좌하단)
         CameraInfoOverlay(
             cameraManager = cameraManager,
@@ -179,6 +207,14 @@ fun SimpleCameraExample() {
                 .align(Alignment.BottomStart)
                 .padding(16.dp)
         )
+
+        // 캡처된 이미지 정보 다이얼로그
+        if (showCaptureInfo && capturedImageInfo != null) {
+            CapturedImageInfoDialog(
+                imageInfo = capturedImageInfo!!,
+                onDismiss = { showCaptureInfo = false }
+            )
+        }
     }
 }
 
@@ -543,4 +579,69 @@ fun CameraInfoOverlay(
             fontSize = 10.sp
         )
     }
+}
+
+/**
+ * 캡처 버튼
+ */
+@Composable
+fun CaptureButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    FloatingActionButton(
+        onClick = onClick,
+        modifier = modifier
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Add,
+            contentDescription = "Capture Photo"
+        )
+    }
+}
+
+/**
+ * 캡처된 이미지 정보 다이얼로그
+ */
+@Composable
+fun CapturedImageInfoDialog(
+    imageInfo: com.kii.camera.CapturedImageInfo,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Captured Image Info")
+        },
+        text = {
+            Column {
+                Text("File: ${imageInfo.fileName}")
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Resolution: ${imageInfo.width}x${imageInfo.height}")
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("File Size: ${imageInfo.getFileSizeFormatted()}")
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Preset: ${imageInfo.preset.name}")
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Preset Resolution: ${imageInfo.preset.targetResolution?.width ?: "Auto"}x${imageInfo.preset.targetResolution?.height ?: "Auto"}")
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("FPS: ${imageInfo.preset.targetFrameRate}")
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Quality: ${imageInfo.preset.imageQuality}%")
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Lens: ${imageInfo.getLensFacingString()}")
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Path: ${imageInfo.filePath}",
+                    fontSize = 10.sp,
+                    color = Color.Gray
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("OK")
+            }
+        }
+    )
 }

@@ -9,7 +9,7 @@ import androidx.camera.core.CameraSelector
  * @since 10/31/25
  */
 data class CameraConfig(
-    val preset: CameraPreset = CameraPreset.MEDIUM,
+    val preset: CameraPreset = CameraPreset.LOW,
     val lensFacing: Int = CameraSelector.LENS_FACING_BACK,
     val enableImageAnalysis: Boolean = true,
     val enableImageCapture: Boolean = true,
@@ -154,4 +154,48 @@ data class Rational(
 ) {
     fun toFloat(): Float = numerator.toFloat() / denominator.toFloat()
     fun toDouble(): Double = numerator.toDouble() / denominator.toDouble()
+}
+
+/**
+ * 캡처된 이미지 정보
+ */
+data class CapturedImageInfo(
+    val filePath: String,
+    val fileName: String,
+    val width: Int,
+    val height: Int,
+    val fileSizeBytes: Long,
+    val preset: CameraPreset,
+    val lensFacing: Int,
+    val timestamp: Long
+) {
+    /**
+     * 파일 크기를 읽기 쉬운 형식으로 변환
+     */
+    fun getFileSizeFormatted(): String {
+        return when {
+            fileSizeBytes < 1024 -> "$fileSizeBytes B"
+            fileSizeBytes < 1024 * 1024 -> "${"%.2f".format(fileSizeBytes / 1024.0)} KB"
+            else -> "${"%.2f".format(fileSizeBytes / (1024.0 * 1024.0))} MB"
+        }
+    }
+
+    /**
+     * 렌즈 방향을 문자열로 변환
+     */
+    fun getLensFacingString(): String {
+        return if (lensFacing == CameraSelector.LENS_FACING_BACK) "Back" else "Front"
+    }
+
+    override fun toString(): String {
+        return buildString {
+            appendLine("File: $fileName")
+            appendLine("Path: $filePath")
+            appendLine("Resolution: ${width}x${height}")
+            appendLine("Size: ${getFileSizeFormatted()}")
+            appendLine("Preset: ${preset.name}")
+            appendLine("Lens: ${getLensFacingString()}")
+            appendLine("Timestamp: $timestamp")
+        }
+    }
 }

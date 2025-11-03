@@ -1,12 +1,15 @@
 package com.kii.camera
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -133,11 +136,26 @@ class CameraManager(
             if (config.enableImageCapture) {
                 imageCapture = ImageCapture.Builder()
                     .apply {
-                        config.preset.targetResolution?.let { setTargetResolution(it) }
-                            ?: setTargetAspectRatio(config.preset.targetAspectRatio)
+                        // ResolutionSelector를 사용하여 정확한 해상도 제어
+                        config.preset.targetResolution?.let { resolution ->
+                            val resolutionSelector = ResolutionSelector.Builder()
+                                .setResolutionStrategy(
+                                    ResolutionStrategy(
+                                        resolution,
+                                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
+                                    )
+                                )
+                                .build()
+                            setResolutionSelector(resolutionSelector)
+                        } ?: run {
+                            // targetResolution이 없으면 aspectRatio 사용 (deprecated)
+                            setTargetAspectRatio(config.preset.targetAspectRatio)
+                        }
+
+                        // CaptureMode: MINIMIZE_LATENCY를 사용하면 해상도 제한이 더 잘 적용됨
                         setCaptureMode(
                             when (config.captureMode) {
-                                CameraConfig.CaptureMode.MAXIMIZE_QUALITY -> ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY
+                                CameraConfig.CaptureMode.MAXIMIZE_QUALITY -> ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
                                 CameraConfig.CaptureMode.MINIMIZE_LATENCY -> ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
                             }
                         )
@@ -264,6 +282,73 @@ class CameraManager(
      */
     fun setZoomRatio(ratio: Float) {
         camera?.cameraControl?.setLinearZoom(ratio.coerceIn(0f, 1f))
+    }
+
+    /**
+     * 사진 캡처
+     * @return CapturedImageInfo 캡처된 이미지 정보 (파일 경로, 크기, 해상도 등)
+     */
+    suspend fun capturePhoto(outputDirectory: java.io.File): CapturedImageInfo {
+        return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+            try {
+                if (imageCapture == null) {
+                    val error = IllegalStateException("ImageCapture is not enabled. Set enableImageCapture=true in config")
+                    Logger.e("CameraManager", "Failed to capture photo", error)
+                    continuation.resumeWith(Result.failure(error))
+                    return@suspendCancellableCoroutine
+                }
+
+                // 파일 생성
+                val fileName = "IMG_${System.currentTimeMillis()}.jpg"
+                val photoFile = java.io.File(outputDirectory, fileName)
+
+                val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+                imageCapture!!.takePicture(
+                    outputOptions,
+                    ContextCompat.getMainExecutor(context),
+                    object : ImageCapture.OnImageSavedCallback {
+                        override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                            try {
+                                Logger.d("CameraManager", "Photo saved: ${photoFile.absolutePath}")
+
+                                // 이미지 정보 추출
+                                val bitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+                                val fileSize = photoFile.length()
+
+                                val info = CapturedImageInfo(
+                                    filePath = photoFile.absolutePath,
+                                    fileName = fileName,
+                                    width = bitmap?.width ?: 0,
+                                    height = bitmap?.height ?: 0,
+                                    fileSizeBytes = fileSize,
+                                    preset = config.preset,
+                                    lensFacing = config.lensFacing,
+                                    timestamp = System.currentTimeMillis()
+                                )
+
+                                bitmap?.recycle()
+
+                                _cameraEvent.tryEmit(CameraEvent.PhotoCaptured(photoFile.absolutePath))
+                                continuation.resumeWith(Result.success(info))
+                            } catch (e: Exception) {
+                                Logger.e("CameraManager", "Failed to process captured image", e)
+                                continuation.resumeWith(Result.failure(e))
+                            }
+                        }
+
+                        override fun onError(exception: androidx.camera.core.ImageCaptureException) {
+                            Logger.e("CameraManager", "Failed to capture photo", exception)
+                            _cameraEvent.tryEmit(CameraEvent.Error(exception))
+                            continuation.resumeWith(Result.failure(exception))
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                Logger.e("CameraManager", "Failed to capture photo", e)
+                continuation.resumeWith(Result.failure(e))
+            }
+        }
     }
 
     /**
