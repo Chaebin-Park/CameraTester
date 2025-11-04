@@ -55,14 +55,15 @@ import com.kii.camera.CameraConfig
 import com.kii.camera.CameraManager
 import com.kii.camera.CameraPreset
 import com.kii.camera.CameraPreview
+import com.kii.camera.CameraState
+import com.kii.camera.FrameAnalysisConfig
+import com.kii.camera.FrameAnalysisResult
 import com.kii.camera.FrameProcessor
 import com.kii.camera.ROI
 import com.kii.camera.SimpleCameraPreview
 import com.kii.camera.mapToBitmap
 import com.kii.camera.mapToYuvBitmap
-import com.kii.camera.toGrayscaleBitmap
 import com.kii.camera.toYPlaneByteArray
-import com.kii.camera.toYuvBitmap
 import com.kii.cameratester.ui.theme.CameraTesterTheme
 import com.kii.common.Logger
 import com.kii.common.PermissionHelper
@@ -113,7 +114,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun CameraExampleApp() {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Simple", "Custom", "Shapes", "Frame")
+    val tabs = listOf("Simple", "Custom", "Shapes", "Analysis")
 
     Scaffold(
         topBar = {
@@ -133,7 +134,7 @@ fun CameraExampleApp() {
                 0 -> SimpleCameraExample()
                 1 -> CustomCameraExample()
                 2 -> ShapesCameraExample()
-                3 -> FrameProcessingExample()
+                3 -> FrameAnalysisExample()
             }
         }
     }
@@ -144,9 +145,7 @@ fun SimpleCameraExample() {
     val context = LocalContext.current
     var cameraManager by remember { mutableStateOf<CameraManager?>(null) }
     var sharpness by remember { mutableStateOf<Double?>(null) }
-//    var brightness by remember { mutableStateOf<Double?>(null) }
     var sharpnessTime by remember { mutableStateOf<Long?>(null) }
-//    var brightnessTime by remember { mutableStateOf<Long?>(null) }
     var capturedImageInfo by remember { mutableStateOf<com.kii.camera.CapturedImageInfo?>(null) }
     var showCaptureInfo by remember { mutableStateOf(false) }
 
@@ -185,14 +184,28 @@ fun SimpleCameraExample() {
                                 roi = ROI.CENTER_50
                             )
                             val sharpnessEnd = System.nanoTime()
-                            val sharpnessElapsed = (sharpnessEnd - sharpnessStart) / 1_000_000.0 // ms
+                            val sharpnessElapsed =
+                                (sharpnessEnd - sharpnessStart) / 1_000_000.0 // ms
 
                             val totalEnd = System.nanoTime()
                             val totalTime = (totalEnd - totalStart) / 1_000_000 // ms
 
-                            val implementation = if (useNative) "Native+ROI+Direct" else "Kotlin+ROI+Direct"
-                            Logger.d("SimpleCameraExample",
-                                "Frame #$frameCount [$implementation] - Conversion: ${String.format("%.2f", conversionTime)}ms, Sharpness: ${String.format("%.2f", sharpnessElapsed)}ms, Total: ${totalTime}ms")
+                            val implementation =
+                                if (useNative) "Native+ROI+Direct" else "Kotlin+ROI+Direct"
+                            Logger.d(
+                                "SimpleCameraExample",
+                                "Frame #$frameCount [$implementation] - Conversion: ${
+                                    String.format(
+                                        "%.2f",
+                                        conversionTime
+                                    )
+                                }ms, Sharpness: ${
+                                    String.format(
+                                        "%.2f",
+                                        sharpnessElapsed
+                                    )
+                                }ms, Total: ${totalTime}ms"
+                            )
 
                             withContext(Dispatchers.Main) {
                                 sharpness = calculatedSharpness
@@ -258,9 +271,7 @@ fun SimpleCameraExample() {
         CameraInfoOverlay(
             cameraManager = cameraManager,
             sharpness = sharpness,
-//            brightness = brightness,
             sharpnessTime = sharpnessTime,
-//            brightnessTime = brightnessTime,
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(16.dp)
@@ -308,7 +319,8 @@ fun CustomCameraExample() {
                     if (frameCount % 10 == 0) {
                         withContext(Dispatchers.Default) {
                             val calculatedSharpness = FrameProcessor.calculateSharpness(it)
-                            val calculatedBrightness = FrameProcessor.calculateHistogramBrightness(it)
+                            val calculatedBrightness =
+                                FrameProcessor.calculateHistogramBrightness(it)
                             withContext(Dispatchers.Main) {
                                 sharpness = calculatedSharpness
                                 brightness = calculatedBrightness
@@ -400,7 +412,8 @@ fun ShapesCameraExample() {
                     if (frameCount % 10 == 0) {
                         withContext(Dispatchers.Default) {
                             val calculatedSharpness = FrameProcessor.calculateSharpness(it)
-                            val calculatedBrightness = FrameProcessor.calculateHistogramBrightness(it)
+                            val calculatedBrightness =
+                                FrameProcessor.calculateHistogramBrightness(it)
                             withContext(Dispatchers.Main) {
                                 sharpness = calculatedSharpness
                                 brightness = calculatedBrightness
@@ -504,89 +517,6 @@ fun ShapesCameraExample() {
     }
 }
 
-@Composable
-fun FrameProcessingExample() {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var frameInfo by remember { mutableStateOf("No frames yet") }
-    var sharpness by remember { mutableStateOf<Double?>(null) }
-    var brightness by remember { mutableStateOf<Double?>(null) }
-
-    val cameraManager = remember {
-        CameraManager(
-            context = context,
-            lifecycleOwner = lifecycleOwner,
-            config = CameraConfig(preset = CameraPreset.MEDIUM)
-        )
-    }
-
-    // 프레임 처리 (프레임 샘플링 적용)
-    LaunchedEffect(Unit) {
-        var frameCount = 0
-        cameraManager.frameFlow
-            .mapToBitmap()
-            .collect { bitmap ->
-                bitmap?.let {
-                    frameCount++
-                    frameInfo = "Frame #$frameCount"
-
-                    // 10프레임 중 1개만 처리 (성능 최적화)
-                    if (frameCount % 10 == 0) {
-                        withContext(Dispatchers.Default) {
-                            val calculatedSharpness = FrameProcessor.calculateSharpness(it)
-                            val calculatedBrightness = FrameProcessor.calculateHistogramBrightness(it)
-                            withContext(Dispatchers.Main) {
-                                sharpness = calculatedSharpness
-                                brightness = calculatedBrightness
-                            }
-                        }
-                    }
-                }
-            }
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-
-        CameraPreview(
-            cameraManager = cameraManager,
-            modifier = Modifier
-                .fillMaxWidth()
-        )
-
-        // 프레임 정보 표시
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.8f))
-                .padding(16.dp)
-        ) {
-            Text(
-                text = frameInfo,
-                color = Color.White,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-
-        // 카메라 전환 버튼 (우상단)
-        CameraSwitchButton(
-            onSwitch = { cameraManager.toggleCamera() },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
-        )
-
-        // 카메라 정보
-        CameraInfoOverlay(
-            cameraManager = cameraManager,
-            sharpness = sharpness,
-            brightness = brightness,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(16.dp)
-        )
-    }
-}
-
 /**
  * 카메라 전환 아이콘 버튼
  */
@@ -637,23 +567,23 @@ fun CameraInfoOverlay(
         }
         cameraState?.let { state ->
             val stateName = when (state) {
-                is com.kii.camera.CameraState.Idle -> "Idle"
-                is com.kii.camera.CameraState.Starting -> "Starting"
-                is com.kii.camera.CameraState.Running -> "Running"
-                is com.kii.camera.CameraState.Stopping -> "Stopping"
-                is com.kii.camera.CameraState.Error -> "Error"
+                CameraState.Idle -> "Idle"
+                is CameraState.Starting -> "Starting"
+                is CameraState.Running -> "Running"
+                is CameraState.Stopping -> "Stopping"
+                is CameraState.Error -> "Error"
             }
             appendLine("State: $stateName")
         }
-        sharpness?.let {
-            val quality = FrameProcessor.getSharpnessQuality(it)
+        sharpness?.let { s ->
+            val quality = FrameProcessor.getSharpnessQuality(s)
             val timeStr = sharpnessTime?.let { " [${it}ms]" } ?: ""
-            appendLine("Sharpness: %.1f ($quality)$timeStr".format(it))
+            appendLine("Sharpness: %.1f ($quality)$timeStr".format(s))
         }
-        brightness?.let {
-            val quality = FrameProcessor.getBrightnessQuality(it)
+        brightness?.let { b ->
+            val quality = FrameProcessor.getBrightnessQuality(b)
             val timeStr = brightnessTime?.let { " [${it}ms]" } ?: ""
-            appendLine("Brightness: %.2f ($quality)$timeStr".format(it))
+            appendLine("Brightness: %.2f ($quality)$timeStr".format(b))
         }
         if (extraInfo.isNotEmpty()) {
             append(extraInfo)
@@ -737,4 +667,220 @@ fun CapturedImageInfoDialog(
             }
         }
     )
+}
+
+/**
+ * 프레임 자동 분석 예제
+ * frameAnalysisFlow를 사용하여 자동으로 분석된 프레임 결과를 받아오는 간단한 예제
+ */
+@Composable
+fun FrameAnalysisExample() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // CameraManager 생성 (자동 프레임 분석 활성화)
+    val cameraManager = remember {
+        CameraManager(
+            context = context,
+            lifecycleOwner = lifecycleOwner,
+            config = CameraConfig(
+                preset = CameraPreset.LOW,
+                frameAnalysisConfig = FrameAnalysisConfig.HIGH_PERFORMANCE
+            )
+        )
+    }
+
+    var sharpness by remember { mutableStateOf<Double?>(null) }
+    var brightness by remember { mutableStateOf<Double?>(null) }
+    var sharpnessLevel by remember { mutableStateOf<FrameAnalysisResult.SharpnessLevel?>(null) }
+    var brightnessLevel by remember { mutableStateOf<FrameAnalysisResult.BrightnessLevel?>(null) }
+    var processingTime by remember { mutableStateOf<Long?>(null) }
+    var frameSize by remember { mutableStateOf<String?>(null) }
+
+    // CameraManager 시작
+    LaunchedEffect(cameraManager) {
+        cameraManager.startCamera()
+    }
+
+    // frameAnalysisFlow로부터 자동 분석 결과 수신
+    LaunchedEffect(cameraManager) {
+        cameraManager.frameAnalysisFlow.collect { result ->
+            sharpness = result.sharpness
+            brightness = result.brightness
+            sharpnessLevel = result.getSharpnessLevel()
+            brightnessLevel = result.getBrightnessLevel()
+            processingTime = result.processingTimeMs
+            frameSize = "${result.width}x${result.height}"
+
+            // ImageProxy는 자동으로 관리되므로 별도 close 불필요
+            result.imageProxy.close()
+        }
+    }
+
+    // 정리
+    DisposableEffect(cameraManager) {
+        onDispose {
+            cameraManager.release()
+        }
+    }
+
+    Scaffold(
+        floatingActionButton = {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // 카메라 전환 버튼
+                FloatingActionButton(
+                    onClick = {
+                        Logger.d("FrameAnalysisExample", "Toggle camera button clicked")
+                        CoroutineScope(Dispatchers.Main).launch {
+                            try {
+                                val newLens = cameraManager.toggleCamera()
+                                Logger.d("FrameAnalysisExample", "Camera toggled to: $newLens")
+                            } catch (e: Exception) {
+                                Logger.e("FrameAnalysisExample", "Failed to toggle camera", e)
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Switch Camera"
+                    )
+                }
+            }
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            // 카메라 프리뷰
+            CameraPreview(
+                cameraManager = cameraManager,
+                modifier = Modifier.fillMaxSize(),
+                autoStart = false // 이미 수동으로 시작함
+            )
+
+            // 분석 결과 표시 (상단)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .align(Alignment.TopCenter)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "Frame Analysis (Auto)",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    frameSize?.let {
+                        Text("Frame Size: $it", fontSize = 12.sp)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            sharpness?.let {
+                                Text(
+                                    "Sharpness: ${"%.2f".format(it)}",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                sharpnessLevel?.let { level ->
+                                    Text(
+                                        level.name.replace("_", " "),
+                                        fontSize = 11.sp,
+                                        color = when (level) {
+                                            FrameAnalysisResult.SharpnessLevel.VERY_SHARP -> Color(
+                                                0xFF4CAF50
+                                            )
+
+                                            FrameAnalysisResult.SharpnessLevel.SHARP -> Color(
+                                                0xFF8BC34A
+                                            )
+
+                                            FrameAnalysisResult.SharpnessLevel.ACCEPTABLE -> Color(
+                                                0xFFFFC107
+                                            )
+
+                                            FrameAnalysisResult.SharpnessLevel.SLIGHTLY_BLURRY -> Color(
+                                                0xFFFF9800
+                                            )
+
+                                            FrameAnalysisResult.SharpnessLevel.BLURRY -> Color(
+                                                0xFFF44336
+                                            )
+
+                                            else -> Color.Gray
+                                        }
+                                    )
+                                }
+                            } ?: Text("Sharpness: -", style = MaterialTheme.typography.bodyMedium)
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            brightness?.let {
+                                Text(
+                                    "Brightness: ${"%.2f".format(it)}",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                brightnessLevel?.let { level ->
+                                    Text(
+                                        level.name.replace("_", " "),
+                                        fontSize = 11.sp,
+                                        color = when (level) {
+                                            FrameAnalysisResult.BrightnessLevel.VERY_BRIGHT -> Color(
+                                                0xFFFFC107
+                                            )
+
+                                            FrameAnalysisResult.BrightnessLevel.BRIGHT -> Color(
+                                                0xFF8BC34A
+                                            )
+
+                                            FrameAnalysisResult.BrightnessLevel.NORMAL -> Color(
+                                                0xFF4CAF50
+                                            )
+
+                                            FrameAnalysisResult.BrightnessLevel.DARK -> Color(
+                                                0xFFFF9800
+                                            )
+
+                                            FrameAnalysisResult.BrightnessLevel.VERY_DARK -> Color(
+                                                0xFFF44336
+                                            )
+
+                                            else -> Color.Gray
+                                        }
+                                    )
+                                }
+                            } ?: Text("Brightness: -", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+
+                    processingTime?.let {
+                        Text(
+                            "Processing: ${it}ms",
+                            fontSize = 11.sp,
+                            color = Color.Gray
+                        )
+                    }
+
+                    Text(
+                        "Using: FrameAnalysisConfig.HIGH_PERFORMANCE",
+                        fontSize = 10.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
+        }
+    }
 }

@@ -14,6 +14,11 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.kii.common.Logger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,8 +26,12 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 카메라 매니저
@@ -44,6 +53,10 @@ class CameraManager(
 
     private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
+    // Coroutine scope for frame analysis
+    private val analysisScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val frameCounter = AtomicInteger(0)
+
     // 카메라 설정 상태
     private val _configState = MutableStateFlow(config)
     val configState: StateFlow<CameraConfig> = _configState.asStateFlow()
@@ -60,6 +73,14 @@ class CameraManager(
     )
     val frameFlow: SharedFlow<ImageProxy> = _frameFlow.asSharedFlow()
 
+    // 프레임 분석 스트림 (자동으로 분석된 프레임 결과 제공)
+    private val _frameAnalysisFlow = MutableSharedFlow<FrameAnalysisResult>(
+        replay = 0,
+        extraBufferCapacity = 2,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val frameAnalysisFlow: SharedFlow<FrameAnalysisResult> = _frameAnalysisFlow.asSharedFlow()
+
     // 카메라 이벤트
     private val _cameraEvent = MutableSharedFlow<CameraEvent>(
         replay = 0,
@@ -70,6 +91,101 @@ class CameraManager(
 
     // Preview Surface Provider 저장
     private var surfaceProvider: Preview.SurfaceProvider? = null
+
+    // 프레임 분석 Job (취소 가능)
+    private var frameAnalysisJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * 프레임 자동 분석 시작
+     */
+    private fun startFrameAnalysis(analysisConfig: FrameAnalysisConfig) {
+        // 기존 분석 중지
+        stopFrameAnalysis()
+
+        Logger.d("CameraManager", "Starting frame analysis with config: $analysisConfig")
+
+        frameAnalysisJob = analysisScope.launch {
+            frameFlow.collect { imageProxy ->
+                try {
+                    // 프레임 샘플링: frameSamplingRate에 따라 일부 프레임만 처리
+                    val currentCount = frameCounter.incrementAndGet()
+                    if (currentCount % analysisConfig.frameSamplingRate != 0) {
+                        // 샘플링에서 제외된 프레임은 즉시 close (중요!)
+                        imageProxy.close()
+                        return@collect
+                    }
+
+                    val startTime = System.nanoTime()
+
+                    // Y plane 추출 (가장 빠른 방법)
+                    val yPlaneBytes = imageProxy.toYPlaneByteArray()
+
+                    if (yPlaneBytes == null) {
+                        Logger.w("CameraManager", "Failed to extract Y plane")
+                        imageProxy.close()
+                        return@collect
+                    }
+
+                    // 선명도 계산
+                    val sharpness = if (analysisConfig.enableSharpness) {
+                        FrameProcessor.calculateSharpnessDirect(
+                            pixelData = yPlaneBytes,
+                            width = imageProxy.width,
+                            height = imageProxy.height,
+                            sampleRate = analysisConfig.sampleRate,
+                            roi = analysisConfig.roi
+                        )
+                    } else null
+
+                    // 밝기 계산
+                    val brightness = if (analysisConfig.enableBrightness) {
+                        FrameProcessor.calculateBrightnessDirect(
+                            pixelData = yPlaneBytes,
+                            width = imageProxy.width,
+                            height = imageProxy.height
+                        )
+                    } else null
+
+                    val endTime = System.nanoTime()
+                    val processingTimeMs = (endTime - startTime) / 1_000_000
+
+                    Logger.d("CameraManager", "Frame analyzed: sharpness=$sharpness, brightness=$brightness, time=${processingTimeMs}ms")
+
+                    // 결과 emit
+                    val result = FrameAnalysisResult(
+                        imageProxy = imageProxy,
+                        sharpness = sharpness,
+                        brightness = brightness,
+                        processingTimeMs = processingTimeMs,
+                        width = imageProxy.width,
+                        height = imageProxy.height
+                    )
+
+                    val emitted = _frameAnalysisFlow.tryEmit(result)
+                    if (!emitted) {
+                        Logger.w("CameraManager", "Failed to emit frame analysis result, buffer full")
+                        imageProxy.close()
+                    }
+                    // Note: imageProxy는 consumer(FrameAnalysisExample)가 close해야 함
+                } catch (e: Exception) {
+                    Logger.e("CameraManager", "Failed to analyze frame", e)
+                    imageProxy.close()
+                }
+            }
+        }
+    }
+
+    /**
+     * 프레임 분석 중지
+     */
+    private fun stopFrameAnalysis() {
+        if (frameAnalysisJob != null) {
+            Logger.d("CameraManager", "Stopping frame analysis")
+            frameAnalysisJob?.cancel()
+            frameAnalysisJob = null
+            frameCounter.set(0)
+        }
+    }
 
     /**
      * 카메라 시작
@@ -83,6 +199,7 @@ class CameraManager(
         try {
             _cameraState.value = CameraState.Starting
             Logger.d("CameraManager", "Starting camera with config: $config")
+            Logger.d("CameraManager", "FrameAnalysisConfig: ${config.frameAnalysisConfig}")
 
             val provider = ProcessCameraProvider.getInstance(context).get()
             cameraProvider = provider
@@ -176,6 +293,17 @@ class CameraManager(
             _cameraEvent.emit(CameraEvent.CameraStarted)
             Logger.d("CameraManager", "Camera started successfully")
 
+            // SurfaceProvider 재연결 (카메라 전환 시 필요)
+            surfaceProvider?.let { provider ->
+                preview?.setSurfaceProvider(provider)
+                Logger.d("CameraManager", "SurfaceProvider reconnected")
+            }
+
+            // 자동 프레임 분석 시작 (카메라가 실행된 후에만)
+            config.frameAnalysisConfig?.let { analysisConfig ->
+                startFrameAnalysis(analysisConfig)
+            }
+
         } catch (e: Exception) {
             Logger.e("CameraManager", "Failed to start camera", e)
             _cameraState.value = CameraState.Error(e)
@@ -195,6 +323,9 @@ class CameraManager(
         try {
             _cameraState.value = CameraState.Stopping
             Logger.d("CameraManager", "Stopping camera")
+
+            // 프레임 분석 중지
+            stopFrameAnalysis()
 
             cameraProvider?.unbindAll()
             camera = null
@@ -441,8 +572,10 @@ class CameraManager(
      */
     fun release() {
         Logger.d("CameraManager", "Releasing camera resources")
+        stopFrameAnalysis()
         stopCamera()
         cameraExecutor.shutdown()
+        analysisScope.cancel()
     }
 
     companion object {

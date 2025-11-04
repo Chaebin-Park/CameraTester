@@ -52,23 +52,22 @@ fun CameraPreview(
         }
     }
 
-    // 카메라 시작
+    // Surface Provider 항상 설정 (autoStart와 무관)
+    LaunchedEffect(previewView) {
+        Logger.d("CameraPreview", "Setting surface provider")
+        cameraManager.setSurfaceProvider(previewView.surfaceProvider)
+    }
+
+    // 카메라 시작 (autoStart=true인 경우에만)
     LaunchedEffect(autoStart) {
         if (autoStart) {
             try {
                 cameraManager.startCamera()
-                // Surface Provider 설정
-                cameraManager.setSurfaceProvider(previewView.surfaceProvider)
             } catch (e: Exception) {
                 Logger.e("CameraPreview", "Failed to start camera", e)
                 onError?.invoke(e)
             }
         }
-    }
-
-    // Surface Provider 설정 (카메라가 이미 시작된 경우)
-    LaunchedEffect(previewView) {
-        cameraManager.getPreview()?.setSurfaceProvider(previewView.surfaceProvider)
     }
 
     // Cleanup

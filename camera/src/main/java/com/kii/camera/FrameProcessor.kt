@@ -476,6 +476,67 @@ object FrameProcessor {
     ): Double
 
     /**
+     * ByteArray 기반 밝기 계산 (Bitmap 생성 우회)
+     *
+     * 가장 빠른 방법 - Bitmap 생성 오버헤드 없음
+     *
+     * @param pixelData Y plane ByteArray
+     * @param width 이미지 폭
+     * @param height 이미지 높이
+     * @return 밝기 값 (0.0 ~ 1.0)
+     */
+    fun calculateBrightnessDirect(
+        pixelData: ByteArray,
+        width: Int,
+        height: Int
+    ): Double {
+        return try {
+            if (nativeLibraryLoaded) {
+                calculateBrightnessNative(pixelData, width, height)
+            } else {
+                // Fallback: Kotlin 구현
+                calculateBrightnessKotlin(pixelData, width, height)
+            }
+        } catch (e: Exception) {
+            Logger.e("FrameProcessor", "Failed to calculate brightness direct", e)
+            0.0
+        }
+    }
+
+    /**
+     * Kotlin 기반 밝기 계산 (Native fallback)
+     */
+    private fun calculateBrightnessKotlin(
+        pixelData: ByteArray,
+        width: Int,
+        height: Int
+    ): Double {
+        // 히스토그램 생성
+        val histogram = IntArray(256)
+        val totalPixels = width * height
+
+        for (i in 0 until totalPixels) {
+            val value = pixelData[i].toInt() and 0xFF
+            histogram[value]++
+        }
+
+        // 가중 평균 계산
+        var weightedSum = 0.0
+        var totalWeight = 0.0
+
+        for (i in histogram.indices) {
+            val count = histogram[i]
+            val brightness = i / 255.0
+            // 밝은 영역에 더 높은 가중치
+            val weight = count * (1.0 + brightness * 0.5)
+            weightedSum += brightness * weight
+            totalWeight += weight
+        }
+
+        return if (totalWeight > 0) weightedSum / totalWeight else 0.0
+    }
+
+    /**
      * 그레이스케일 Bitmap의 선명도 계산 (Native 구현)
      */
     private fun calculateSharpnessGrayscaleNative(bitmap: Bitmap, sampleRate: Int): Double {

@@ -1,6 +1,7 @@
 package com.kii.camera
 
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageProxy
 
 /**
  * 카메라 설정
@@ -15,7 +16,8 @@ data class CameraConfig(
     val enableImageCapture: Boolean = true,
     val enableVideoCapture: Boolean = false,
     val flashMode: FlashMode = FlashMode.OFF,
-    val captureMode: CaptureMode = CaptureMode.MAXIMIZE_QUALITY
+    val captureMode: CaptureMode = CaptureMode.MAXIMIZE_QUALITY,
+    val frameAnalysisConfig: FrameAnalysisConfig? = null
 ) {
     companion object {
         /**
@@ -84,6 +86,7 @@ data class CameraConfig(
         var enableVideoCapture: Boolean = false
         var flashMode: FlashMode = FlashMode.OFF
         var captureMode: CaptureMode = CaptureMode.MAXIMIZE_QUALITY
+        var frameAnalysisConfig: FrameAnalysisConfig? = null
 
         fun build() = CameraConfig(
             preset = preset,
@@ -92,7 +95,8 @@ data class CameraConfig(
             enableImageCapture = enableImageCapture,
             enableVideoCapture = enableVideoCapture,
             flashMode = flashMode,
-            captureMode = captureMode
+            captureMode = captureMode,
+            frameAnalysisConfig = frameAnalysisConfig
         )
     }
 }
@@ -197,5 +201,136 @@ data class CapturedImageInfo(
             appendLine("Lens: ${getLensFacingString()}")
             appendLine("Timestamp: $timestamp")
         }
+    }
+}
+
+/**
+ * 프레임 분석 설정
+ */
+data class FrameAnalysisConfig(
+    val enableSharpness: Boolean = true,
+    val enableBrightness: Boolean = false,
+    val sampleRate: Int = 4,
+    val frameSamplingRate: Int = 10,
+    val roi: ROI = ROI.CENTER_50,
+    val useNativeProcessing: Boolean = true
+) {
+    companion object {
+        /**
+         * 기본 분석 설정 (선명도만, 10프레임당 1회)
+         */
+        val DEFAULT = FrameAnalysisConfig()
+
+        /**
+         * 고성능 분석 (선명도+밝기, Native 처리)
+         */
+        val HIGH_PERFORMANCE = FrameAnalysisConfig(
+            enableSharpness = true,
+            enableBrightness = true,
+            sampleRate = 4,
+            frameSamplingRate = 10,
+            roi = ROI.CENTER_50,
+            useNativeProcessing = true
+        )
+
+        /**
+         * 전체 영역 분석 (ROI 없음)
+         */
+        val FULL_FRAME = FrameAnalysisConfig(
+            enableSharpness = true,
+            enableBrightness = false,
+            sampleRate = 4,
+            frameSamplingRate = 10,
+            roi = ROI.FULL,
+            useNativeProcessing = true
+        )
+
+        /**
+         * 정밀 분석 (샘플링 최소화)
+         */
+        val PRECISE = FrameAnalysisConfig(
+            enableSharpness = true,
+            enableBrightness = true,
+            sampleRate = 2,
+            frameSamplingRate = 5,
+            roi = ROI.CENTER_70,
+            useNativeProcessing = true
+        )
+    }
+}
+
+/**
+ * 프레임 분석 결과
+ */
+data class FrameAnalysisResult(
+    val imageProxy: ImageProxy,
+    val sharpness: Double? = null,
+    val brightness: Double? = null,
+    val processingTimeMs: Long = 0,
+    val width: Int,
+    val height: Int,
+    val timestamp: Long = System.currentTimeMillis()
+) {
+    /**
+     * 선명도 수준 판정
+     */
+    fun getSharpnessLevel(): SharpnessLevel {
+        return when {
+            sharpness == null -> SharpnessLevel.UNKNOWN
+            sharpness < 5.0 -> SharpnessLevel.BLURRY
+            sharpness < 10.0 -> SharpnessLevel.SLIGHTLY_BLURRY
+            sharpness < 15.0 -> SharpnessLevel.ACCEPTABLE
+            sharpness < 20.0 -> SharpnessLevel.SHARP
+            else -> SharpnessLevel.VERY_SHARP
+        }
+    }
+
+    /**
+     * 밝기 수준 판정
+     */
+    fun getBrightnessLevel(): BrightnessLevel {
+        return when {
+            brightness == null -> BrightnessLevel.UNKNOWN
+            brightness < 0.2 -> BrightnessLevel.VERY_DARK
+            brightness < 0.4 -> BrightnessLevel.DARK
+            brightness < 0.6 -> BrightnessLevel.NORMAL
+            brightness < 0.8 -> BrightnessLevel.BRIGHT
+            else -> BrightnessLevel.VERY_BRIGHT
+        }
+    }
+
+    override fun toString(): String {
+        return buildString {
+            appendLine("Frame Analysis Result:")
+            appendLine("  Resolution: ${width}x${height}")
+            sharpness?.let { appendLine("  Sharpness: ${"%.2f".format(it)} (${getSharpnessLevel()})") }
+            brightness?.let { appendLine("  Brightness: ${"%.2f".format(it)} (${getBrightnessLevel()})") }
+            appendLine("  Processing Time: ${processingTimeMs}ms")
+            appendLine("  Timestamp: $timestamp")
+        }
+    }
+
+    /**
+     * 선명도 수준
+     */
+    enum class SharpnessLevel {
+        UNKNOWN,
+        BLURRY,
+        SLIGHTLY_BLURRY,
+        ACCEPTABLE,
+        SHARP,
+        VERY_SHARP
+    }
+
+    /**
+     * 밝기 수준
+     */
+    enum class BrightnessLevel {
+        UNKNOWN,
+        VERY_DARK,
+        DARK,
+        NORMAL,
+        BRIGHT,
+        VERY_BRIGHT
     }
 }
