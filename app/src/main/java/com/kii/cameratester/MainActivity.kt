@@ -1,6 +1,5 @@
 package com.kii.cameratester
 
-import android.Manifest
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -25,8 +24,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Card
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,12 +58,15 @@ import com.kii.camera.CameraPreview
 import com.kii.camera.FrameProcessor
 import com.kii.camera.SimpleCameraPreview
 import com.kii.camera.mapToBitmap
+import com.kii.camera.mapToYuvBitmap
+import com.kii.camera.toYuvBitmap
 import com.kii.cameratester.ui.theme.CameraTesterTheme
 import com.kii.common.Logger
 import com.kii.common.PermissionHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
@@ -139,20 +141,54 @@ fun SimpleCameraExample() {
     val context = LocalContext.current
     var cameraManager by remember { mutableStateOf<CameraManager?>(null) }
     var sharpness by remember { mutableStateOf<Double?>(null) }
-    var brightness by remember { mutableStateOf<Double?>(null) }
+//    var brightness by remember { mutableStateOf<Double?>(null) }
+    var sharpnessTime by remember { mutableStateOf<Long?>(null) }
+//    var brightnessTime by remember { mutableStateOf<Long?>(null) }
     var capturedImageInfo by remember { mutableStateOf<com.kii.camera.CapturedImageInfo?>(null) }
     var showCaptureInfo by remember { mutableStateOf(false) }
 
-    // 선명도 및 밝기 측정
+    // 선명도 측정 (완전히 백그라운드에서 처리)
     LaunchedEffect(cameraManager) {
-        cameraManager?.frameFlow
-            ?.mapToBitmap()
-            ?.collect { bitmap ->
-                bitmap?.let {
-                    sharpness = FrameProcessor.calculateSharpness(it)
-                    brightness = FrameProcessor.calculateHistogramBrightness(it)
+        var frameCount = 0
+        cameraManager?.frameFlow?.collect { imageProxy ->
+            frameCount++
+
+            // 10프레임 중 1개만 처리 (성능 최적화)
+            if (frameCount % 10 == 0) {
+                // 백그라운드 코루틴으로 완전히 분리
+                launch(Dispatchers.IO) {
+                    try {
+                        // YUV → Bitmap 변환
+                        val bitmap = imageProxy.toYuvBitmap()
+
+                        if (bitmap != null) {
+                            // 선명도 측정 시간
+                            val sharpnessStart = System.nanoTime()
+                            val calculatedSharpness = FrameProcessor.calculateSharpness(bitmap)
+                            val sharpnessEnd = System.nanoTime()
+                            val sharpnessElapsed = (sharpnessEnd - sharpnessStart) / 1_000_000 // ms
+
+                            Logger.d("SimpleCameraExample",
+                                "Frame #$frameCount - Sharpness: ${sharpnessElapsed}ms")
+
+                            withContext(Dispatchers.Main) {
+                                sharpness = calculatedSharpness
+                                sharpnessTime = sharpnessElapsed
+                            }
+
+                            // Bitmap 메모리 해제
+                            bitmap.recycle()
+                        }
+                    } finally {
+                        // 메모리 누수 방지
+                        imageProxy.close()
+                    }
                 }
+            } else {
+                // 처리하지 않는 프레임은 즉시 close
+                imageProxy.close()
             }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -202,7 +238,9 @@ fun SimpleCameraExample() {
         CameraInfoOverlay(
             cameraManager = cameraManager,
             sharpness = sharpness,
-            brightness = brightness,
+//            brightness = brightness,
+            sharpnessTime = sharpnessTime,
+//            brightnessTime = brightnessTime,
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(16.dp)
@@ -239,14 +277,25 @@ fun CustomCameraExample() {
         cameraManager.updatePreset(currentPreset)
     }
 
-    // 선명도 및 밝기 측정
+    // 선명도 및 밝기 측정 (프레임 샘플링 적용)
     LaunchedEffect(Unit) {
+        var frameCount = 0
         cameraManager.frameFlow
             .mapToBitmap()
             .collect { bitmap ->
                 bitmap?.let {
-                    sharpness = FrameProcessor.calculateSharpness(it)
-                    brightness = FrameProcessor.calculateHistogramBrightness(it)
+                    // 10프레임 중 1개만 처리 (성능 최적화)
+                    if (frameCount % 10 == 0) {
+                        withContext(Dispatchers.Default) {
+                            val calculatedSharpness = FrameProcessor.calculateSharpness(it)
+                            val calculatedBrightness = FrameProcessor.calculateHistogramBrightness(it)
+                            withContext(Dispatchers.Main) {
+                                sharpness = calculatedSharpness
+                                brightness = calculatedBrightness
+                            }
+                        }
+                    }
+                    frameCount++
                 }
             }
     }
@@ -320,14 +369,25 @@ fun ShapesCameraExample() {
     var sharpness by remember { mutableStateOf<Double?>(null) }
     var brightness by remember { mutableStateOf<Double?>(null) }
 
-    // 선명도 및 밝기 측정
+    // 선명도 및 밝기 측정 (프레임 샘플링 적용)
     LaunchedEffect(cameraManager) {
+        var frameCount = 0
         cameraManager?.frameFlow
-            ?.mapToBitmap()
+            ?.mapToYuvBitmap()
             ?.collect { bitmap ->
                 bitmap?.let {
-                    sharpness = FrameProcessor.calculateSharpness(it)
-                    brightness = FrameProcessor.calculateHistogramBrightness(it)
+                    // 10프레임 중 1개만 처리 (성능 최적화)
+                    if (frameCount % 10 == 0) {
+                        withContext(Dispatchers.Default) {
+                            val calculatedSharpness = FrameProcessor.calculateSharpness(it)
+                            val calculatedBrightness = FrameProcessor.calculateHistogramBrightness(it)
+                            withContext(Dispatchers.Main) {
+                                sharpness = calculatedSharpness
+                                brightness = calculatedBrightness
+                            }
+                        }
+                    }
+                    frameCount++
                 }
             }
     }
@@ -440,7 +500,7 @@ fun FrameProcessingExample() {
         )
     }
 
-    // 프레임 처리
+    // 프레임 처리 (프레임 샘플링 적용)
     LaunchedEffect(Unit) {
         var frameCount = 0
         cameraManager.frameFlow
@@ -448,10 +508,19 @@ fun FrameProcessingExample() {
             .collect { bitmap ->
                 bitmap?.let {
                     frameCount++
-                    sharpness = FrameProcessor.calculateSharpness(it)
-                    brightness = FrameProcessor.calculateHistogramBrightness(it)
-                    frameInfo =
-                        "Frame #$frameCount"
+                    frameInfo = "Frame #$frameCount"
+
+                    // 10프레임 중 1개만 처리 (성능 최적화)
+                    if (frameCount % 10 == 0) {
+                        withContext(Dispatchers.Default) {
+                            val calculatedSharpness = FrameProcessor.calculateSharpness(it)
+                            val calculatedBrightness = FrameProcessor.calculateHistogramBrightness(it)
+                            withContext(Dispatchers.Main) {
+                                sharpness = calculatedSharpness
+                                brightness = calculatedBrightness
+                            }
+                        }
+                    }
                 }
             }
     }
@@ -531,6 +600,8 @@ fun CameraInfoOverlay(
     modifier: Modifier = Modifier,
     sharpness: Double? = null,
     brightness: Double? = null,
+    sharpnessTime: Long? = null,
+    brightnessTime: Long? = null,
     extraInfo: String = ""
 ) {
     val config = cameraManager?.configState?.collectAsState()?.value
@@ -556,11 +627,13 @@ fun CameraInfoOverlay(
         }
         sharpness?.let {
             val quality = FrameProcessor.getSharpnessQuality(it)
-            appendLine("Sharpness: %.1f ($quality)".format(it))
+            val timeStr = sharpnessTime?.let { " [${it}ms]" } ?: ""
+            appendLine("Sharpness: %.1f ($quality)$timeStr".format(it))
         }
         brightness?.let {
             val quality = FrameProcessor.getBrightnessQuality(it)
-            appendLine("Brightness: %.2f ($quality)".format(it))
+            val timeStr = brightnessTime?.let { " [${it}ms]" } ?: ""
+            appendLine("Brightness: %.2f ($quality)$timeStr".format(it))
         }
         if (extraInfo.isNotEmpty()) {
             append(extraInfo)
