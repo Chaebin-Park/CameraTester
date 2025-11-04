@@ -148,9 +148,12 @@ fun SimpleCameraExample() {
     var capturedImageInfo by remember { mutableStateOf<com.kii.camera.CapturedImageInfo?>(null) }
     var showCaptureInfo by remember { mutableStateOf(false) }
 
-    // 선명도 측정 (완전히 백그라운드에서 처리 - JPEG 우회 최적화)
+    // 선명도 측정 (완전히 백그라운드에서 처리 - JPEG 우회 + Native 최적화)
     LaunchedEffect(cameraManager) {
         var frameCount = 0
+        val useNative = FrameProcessor.isNativeAvailable()
+        Logger.d("SimpleCameraExample", "Native library available: $useNative")
+
         cameraManager?.frameFlow?.collect { imageProxy ->
             frameCount++
 
@@ -169,7 +172,7 @@ fun SimpleCameraExample() {
                         val conversionTime = (conversionEnd - conversionStart) / 1_000_000 // ms
 
                         if (bitmap != null) {
-                            // 선명도 측정 시간
+                            // 선명도 측정 시간 (Native 또는 Kotlin)
                             val sharpnessStart = System.nanoTime()
                             val calculatedSharpness = FrameProcessor.calculateSharpness(bitmap)
                             val sharpnessEnd = System.nanoTime()
@@ -178,8 +181,9 @@ fun SimpleCameraExample() {
                             val totalEnd = System.nanoTime()
                             val totalTime = (totalEnd - totalStart) / 1_000_000 // ms
 
+                            val implementation = if (useNative) "Native" else "Kotlin"
                             Logger.d("SimpleCameraExample",
-                                "Frame #$frameCount - Conversion: ${conversionTime}ms, Sharpness: ${sharpnessElapsed}ms, Total: ${totalTime}ms")
+                                "Frame #$frameCount [$implementation] - Conversion: ${conversionTime}ms, Sharpness: ${sharpnessElapsed}ms, Total: ${totalTime}ms")
 
                             withContext(Dispatchers.Main) {
                                 sharpness = calculatedSharpness
