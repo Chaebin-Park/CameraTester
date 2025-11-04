@@ -176,6 +176,52 @@ fun ImageProxy.toGrayscaleBitmap(): Bitmap? {
 }
 
 /**
+ * ImageProxy의 Y plane을 ByteArray로 직접 추출
+ *
+ * Bitmap 생성 오버헤드 없이 바로 Native 함수로 전달 가능 (1-2ms)
+ * 가장 빠른 방법
+ *
+ * @return Y plane ByteArray
+ */
+fun ImageProxy.toYPlaneByteArray(): ByteArray? {
+    return try {
+        if (format != ImageFormat.YUV_420_888) {
+            Logger.w("FrameProcessor", "Image format is not YUV_420_888")
+            return null
+        }
+
+        val yPlane = planes[0]
+        val yBuffer = yPlane.buffer
+        val yRowStride = yPlane.rowStride
+        val yPixelStride = yPlane.pixelStride
+
+        if (yRowStride == width && yPixelStride == 1) {
+            // 연속된 메모리 - 직접 복사 (가장 빠름)
+            val yBytes = ByteArray(yBuffer.remaining())
+            yBuffer.get(yBytes)
+            yBytes
+        } else {
+            // Stride/Padding 제거하여 복사
+            val yBytes = ByteArray(width * height)
+            for (row in 0 until height) {
+                yBuffer.position(row * yRowStride)
+                if (yPixelStride == 1) {
+                    yBuffer.get(yBytes, row * width, width)
+                } else {
+                    for (col in 0 until width) {
+                        yBytes[row * width + col] = yBuffer.get(row * yRowStride + col * yPixelStride)
+                    }
+                }
+            }
+            yBytes
+        }
+    } catch (e: Exception) {
+        Logger.e("FrameProcessor", "Failed to extract Y plane", e)
+        null
+    }
+}
+
+/**
  * ImageProxy ByteBuffer 추출
  */
 fun ImageProxy.toByteBuffer(): ByteBuffer {
@@ -369,6 +415,65 @@ object FrameProcessor {
             return 0.0
         }
     }
+
+    /**
+     * ByteArray 기반 선명도 계산 (Bitmap 생성 우회)
+     *
+     * 가장 빠른 방법 - Bitmap 생성 오버헤드 없음
+     *
+     * @param pixelData Y plane ByteArray
+     * @param width 이미지 폭
+     * @param height 이미지 높이
+     * @param sampleRate 샘플링 비율
+     * @param roi ROI 영역 (null이면 전체 영역)
+     * @return 선명도 값
+     */
+    fun calculateSharpnessDirect(
+        pixelData: ByteArray,
+        width: Int,
+        height: Int,
+        sampleRate: Int = 4,
+        roi: ROI? = null
+    ): Double {
+        return try {
+            if (nativeLibraryLoaded) {
+                if (roi != null && roi != ROI.FULL) {
+                    val rect = roi.toRect(width, height)
+                    calculateSharpnessNativeROI(
+                        pixelData, width, height, sampleRate,
+                        rect.left, rect.top, rect.width(), rect.height()
+                    )
+                } else {
+                    calculateSharpnessNative(pixelData, width, height, sampleRate)
+                }
+            } else {
+                // Fallback: Bitmap 생성 후 처리
+                val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ALPHA_8)
+                bitmap.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(pixelData))
+                val result = calculateSharpness(bitmap, sampleRate, useNative = false, roi)
+                bitmap.recycle()
+                result
+            }
+        } catch (e: Exception) {
+            Logger.e("FrameProcessor", "Failed to calculate sharpness direct", e)
+            0.0
+        }
+    }
+
+    /**
+     * Native ROI 함수 (JNI)
+     */
+    @JvmStatic
+    private external fun calculateSharpnessNativeROI(
+        pixelData: ByteArray,
+        width: Int,
+        height: Int,
+        sampleRate: Int,
+        roiLeft: Int,
+        roiTop: Int,
+        roiWidth: Int,
+        roiHeight: Int
+    ): Double
 
     /**
      * 그레이스케일 Bitmap의 선명도 계산 (Native 구현)

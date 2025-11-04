@@ -61,6 +61,7 @@ import com.kii.camera.SimpleCameraPreview
 import com.kii.camera.mapToBitmap
 import com.kii.camera.mapToYuvBitmap
 import com.kii.camera.toGrayscaleBitmap
+import com.kii.camera.toYPlaneByteArray
 import com.kii.camera.toYuvBitmap
 import com.kii.cameratester.ui.theme.CameraTesterTheme
 import com.kii.common.Logger
@@ -166,20 +167,21 @@ fun SimpleCameraExample() {
                         // 전체 처리 시간 측정
                         val totalStart = System.nanoTime()
 
-                        // Y plane → 그레이스케일 Bitmap 변환 (JPEG 우회)
+                        // Y plane → ByteArray 직접 추출 (Bitmap 생성 우회)
                         val conversionStart = System.nanoTime()
-                        val bitmap = imageProxy.toGrayscaleBitmap()
+                        val yPlaneBytes = imageProxy.toYPlaneByteArray()
                         val conversionEnd = System.nanoTime()
                         val conversionTime = (conversionEnd - conversionStart) / 1_000_000 // ms
 
-                        if (bitmap != null) {
-                            // 선명도 측정 시간 (Native + ROI 최적화)
+                        if (yPlaneBytes != null) {
+                            // 선명도 측정 시간 (Native + ROI + Direct 최적화)
                             val sharpnessStart = System.nanoTime()
-                            // 중앙 50% 영역만 처리 (ROI)
-                            val calculatedSharpness = FrameProcessor.calculateSharpness(
-                                bitmap,
+                            // ByteArray 직접 처리 (중앙 50% ROI)
+                            val calculatedSharpness = FrameProcessor.calculateSharpnessDirect(
+                                pixelData = yPlaneBytes,
+                                width = imageProxy.width,
+                                height = imageProxy.height,
                                 sampleRate = 4,
-                                useNative = true,
                                 roi = ROI.CENTER_50
                             )
                             val sharpnessEnd = System.nanoTime()
@@ -188,7 +190,7 @@ fun SimpleCameraExample() {
                             val totalEnd = System.nanoTime()
                             val totalTime = (totalEnd - totalStart) / 1_000_000 // ms
 
-                            val implementation = if (useNative) "Native+ROI" else "Kotlin+ROI"
+                            val implementation = if (useNative) "Native+ROI+Direct" else "Kotlin+ROI+Direct"
                             Logger.d("SimpleCameraExample",
                                 "Frame #$frameCount [$implementation] - Conversion: ${conversionTime}ms, Sharpness: ${sharpnessElapsed}ms, Total: ${totalTime}ms")
 
@@ -196,9 +198,6 @@ fun SimpleCameraExample() {
                                 sharpness = calculatedSharpness
                                 sharpnessTime = totalTime
                             }
-
-                            // Bitmap 메모리 해제
-                            bitmap.recycle()
                         }
                     } finally {
                         // 메모리 누수 방지
