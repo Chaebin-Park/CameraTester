@@ -89,6 +89,87 @@ Java_com_kii_camera_FrameProcessor_calculateSharpnessNative(
     return count > 0 ? sum / count : 0.0;
 }
 
+/**
+ * ROI 영역의 선명도 계산
+ *
+ * @param env JNI 환경
+ * @param obj JNI 객체
+ * @param pixelData 그레이스케일 픽셀 데이터 (ByteArray)
+ * @param width 이미지 폭
+ * @param height 이미지 높이
+ * @param sampleRate 샘플링 비율
+ * @param roiLeft ROI 좌측 시작점
+ * @param roiTop ROI 상단 시작점
+ * @param roiWidth ROI 폭
+ * @param roiHeight ROI 높이
+ * @return 선명도 값 (0~255)
+ */
+extern "C" JNIEXPORT jdouble JNICALL
+Java_com_kii_camera_FrameProcessor_calculateSharpnessNativeROI(
+    JNIEnv* env,
+    jobject /* obj */,
+    jbyteArray pixelData,
+    jint width,
+    jint height,
+    jint sampleRate,
+    jint roiLeft,
+    jint roiTop,
+    jint roiWidth,
+    jint roiHeight
+) {
+    if (pixelData == nullptr || width <= 0 || height <= 0 || sampleRate < 1) {
+        LOGE("Invalid parameters");
+        return 0.0;
+    }
+
+    // ROI 범위 검증
+    if (roiLeft < 0 || roiTop < 0 || roiWidth <= 0 || roiHeight <= 0 ||
+        roiLeft + roiWidth > width || roiTop + roiHeight > height) {
+        LOGE("Invalid ROI: left=%d, top=%d, width=%d, height=%d", roiLeft, roiTop, roiWidth, roiHeight);
+        return 0.0;
+    }
+
+    jbyte* pixels = env->GetByteArrayElements(pixelData, nullptr);
+    if (pixels == nullptr) {
+        LOGE("Failed to get byte array elements");
+        return 0.0;
+    }
+
+    auto* unsignedPixels = reinterpret_cast<uint8_t*>(pixels);
+
+    double sum = 0.0;
+    int count = 0;
+
+    // ROI 영역만 처리
+    const int roiRight = roiLeft + roiWidth;
+    const int roiBottom = roiTop + roiHeight;
+
+    for (int i = roiTop + sampleRate; i < roiBottom - sampleRate; i += sampleRate) {
+        for (int j = roiLeft + sampleRate; j < roiRight - sampleRate; j += sampleRate) {
+            const int idx = i * width + j;
+
+            // 중심 픽셀
+            const int center = unsignedPixels[idx];
+
+            // 상하좌우 픽셀
+            const int up = unsignedPixels[(i - sampleRate) * width + j];
+            const int down = unsignedPixels[(i + sampleRate) * width + j];
+            const int left = unsignedPixels[i * width + (j - sampleRate)];
+            const int right = unsignedPixels[i * width + (j + sampleRate)];
+
+            // Laplacian 계산
+            const int laplacian = std::abs(4 * center - up - down - left - right);
+
+            sum += laplacian;
+            count++;
+        }
+    }
+
+    env->ReleaseByteArrayElements(pixelData, pixels, JNI_ABORT);
+
+    return count > 0 ? sum / count : 0.0;
+}
+
 #ifdef USE_NEON
 /**
  * ARM NEON SIMD를 사용한 최적화 버전

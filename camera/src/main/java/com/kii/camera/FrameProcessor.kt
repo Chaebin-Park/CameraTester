@@ -21,6 +21,48 @@ import androidx.core.graphics.scale
  */
 
 /**
+ * ROI (Region of Interest) 설정
+ *
+ * @param centerX 중심점 X 좌표 비율 (0.0 ~ 1.0, 기본값 0.5 = 중앙)
+ * @param centerY 중심점 Y 좌표 비율 (0.0 ~ 1.0, 기본값 0.5 = 중앙)
+ * @param widthRatio 폭 비율 (0.0 ~ 1.0, 기본값 0.5 = 50%)
+ * @param heightRatio 높이 비율 (0.0 ~ 1.0, 기본값 0.5 = 50%)
+ */
+data class ROI(
+    val centerX: Float = 0.5f,
+    val centerY: Float = 0.5f,
+    val widthRatio: Float = 0.5f,
+    val heightRatio: Float = 0.5f
+) {
+    companion object {
+        /** 중앙 50% 영역 */
+        val CENTER_50 = ROI(0.5f, 0.5f, 0.5f, 0.5f)
+
+        /** 중앙 30% 영역 (더 작은 영역) */
+        val CENTER_30 = ROI(0.5f, 0.5f, 0.3f, 0.3f)
+
+        /** 중앙 70% 영역 (더 큰 영역) */
+        val CENTER_70 = ROI(0.5f, 0.5f, 0.7f, 0.7f)
+
+        /** 전체 영역 (ROI 없음) */
+        val FULL = ROI(0.5f, 0.5f, 1.0f, 1.0f)
+    }
+
+    /**
+     * 실제 픽셀 좌표로 변환
+     */
+    fun toRect(imageWidth: Int, imageHeight: Int): Rect {
+        val roiWidth = (imageWidth * widthRatio).toInt()
+        val roiHeight = (imageHeight * heightRatio).toInt()
+
+        val left = ((imageWidth * centerX) - (roiWidth / 2f)).toInt().coerceIn(0, imageWidth - roiWidth)
+        val top = ((imageHeight * centerY) - (roiHeight / 2f)).toInt().coerceIn(0, imageHeight - roiHeight)
+
+        return Rect(left, top, left + roiWidth, top + roiHeight)
+    }
+}
+
+/**
  * ImageProxy를 Bitmap으로 변환
  */
 fun ImageProxy.toBitmap(): Bitmap? {
@@ -283,24 +325,45 @@ object FrameProcessor {
      * @param bitmap 측정할 비트맵 (ARGB_8888 또는 ALPHA_8)
      * @param sampleRate 샘플링 비율 (1 = 모든 픽셀, 2 = 2픽셀마다, 기본값 4)
      * @param useNative Native 구현 사용 여부 (기본값 true, 사용 불가 시 Kotlin 구현)
+     * @param roi ROI 영역 (null이면 전체 영역)
      * @return 선명도 값 (0~255 범위, 높을수록 선명함)
      */
-    fun calculateSharpness(bitmap: Bitmap, sampleRate: Int = 4, useNative: Boolean = true): Double {
+    fun calculateSharpness(
+        bitmap: Bitmap,
+        sampleRate: Int = 4,
+        useNative: Boolean = true,
+        roi: ROI? = null
+    ): Double {
         try {
-            return when (bitmap.config) {
+            // ROI 적용 (영역 자르기)
+            val targetBitmap = if (roi != null && roi != ROI.FULL) {
+                val rect = roi.toRect(bitmap.width, bitmap.height)
+                cropBitmap(bitmap, rect.left, rect.top, rect.width(), rect.height())
+            } else {
+                bitmap
+            }
+
+            val result = when (targetBitmap.config) {
                 Bitmap.Config.ALPHA_8 -> {
                     // 그레이스케일 - Native 또는 Kotlin 구현
                     if (useNative && nativeLibraryLoaded) {
-                        calculateSharpnessGrayscaleNative(bitmap, sampleRate)
+                        calculateSharpnessGrayscaleNative(targetBitmap, sampleRate)
                     } else {
-                        calculateSharpnessGrayscale(bitmap, sampleRate)
+                        calculateSharpnessGrayscale(targetBitmap, sampleRate)
                     }
                 }
                 else -> {
                     // RGB/ARGB - 그레이스케일 변환 후 처리
-                    calculateSharpnessRGB(bitmap, sampleRate)
+                    calculateSharpnessRGB(targetBitmap, sampleRate)
                 }
             }
+
+            // ROI로 자른 Bitmap은 메모리 해제
+            if (targetBitmap != bitmap) {
+                targetBitmap.recycle()
+            }
+
+            return result
         } catch (e: Exception) {
             Logger.e("FrameProcessor", "Failed to calculate sharpness", e)
             return 0.0

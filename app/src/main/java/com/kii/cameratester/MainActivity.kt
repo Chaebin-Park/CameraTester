@@ -56,6 +56,7 @@ import com.kii.camera.CameraManager
 import com.kii.camera.CameraPreset
 import com.kii.camera.CameraPreview
 import com.kii.camera.FrameProcessor
+import com.kii.camera.ROI
 import com.kii.camera.SimpleCameraPreview
 import com.kii.camera.mapToBitmap
 import com.kii.camera.mapToYuvBitmap
@@ -172,16 +173,22 @@ fun SimpleCameraExample() {
                         val conversionTime = (conversionEnd - conversionStart) / 1_000_000 // ms
 
                         if (bitmap != null) {
-                            // 선명도 측정 시간 (Native 또는 Kotlin)
+                            // 선명도 측정 시간 (Native + ROI 최적화)
                             val sharpnessStart = System.nanoTime()
-                            val calculatedSharpness = FrameProcessor.calculateSharpness(bitmap)
+                            // 중앙 50% 영역만 처리 (ROI)
+                            val calculatedSharpness = FrameProcessor.calculateSharpness(
+                                bitmap,
+                                sampleRate = 4,
+                                useNative = true,
+                                roi = ROI.CENTER_50
+                            )
                             val sharpnessEnd = System.nanoTime()
                             val sharpnessElapsed = (sharpnessEnd - sharpnessStart) / 1_000_000 // ms
 
                             val totalEnd = System.nanoTime()
                             val totalTime = (totalEnd - totalStart) / 1_000_000 // ms
 
-                            val implementation = if (useNative) "Native" else "Kotlin"
+                            val implementation = if (useNative) "Native+ROI" else "Kotlin+ROI"
                             Logger.d("SimpleCameraExample",
                                 "Frame #$frameCount [$implementation] - Conversion: ${conversionTime}ms, Sharpness: ${sharpnessElapsed}ms, Total: ${totalTime}ms")
 
