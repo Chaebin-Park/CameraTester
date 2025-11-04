@@ -59,6 +59,7 @@ import com.kii.camera.FrameProcessor
 import com.kii.camera.SimpleCameraPreview
 import com.kii.camera.mapToBitmap
 import com.kii.camera.mapToYuvBitmap
+import com.kii.camera.toGrayscaleBitmap
 import com.kii.camera.toYuvBitmap
 import com.kii.cameratester.ui.theme.CameraTesterTheme
 import com.kii.common.Logger
@@ -147,7 +148,7 @@ fun SimpleCameraExample() {
     var capturedImageInfo by remember { mutableStateOf<com.kii.camera.CapturedImageInfo?>(null) }
     var showCaptureInfo by remember { mutableStateOf(false) }
 
-    // 선명도 측정 (완전히 백그라운드에서 처리)
+    // 선명도 측정 (완전히 백그라운드에서 처리 - JPEG 우회 최적화)
     LaunchedEffect(cameraManager) {
         var frameCount = 0
         cameraManager?.frameFlow?.collect { imageProxy ->
@@ -158,8 +159,14 @@ fun SimpleCameraExample() {
                 // 백그라운드 코루틴으로 완전히 분리
                 launch(Dispatchers.IO) {
                     try {
-                        // YUV → Bitmap 변환
-                        val bitmap = imageProxy.toYuvBitmap()
+                        // 전체 처리 시간 측정
+                        val totalStart = System.nanoTime()
+
+                        // Y plane → 그레이스케일 Bitmap 변환 (JPEG 우회)
+                        val conversionStart = System.nanoTime()
+                        val bitmap = imageProxy.toGrayscaleBitmap()
+                        val conversionEnd = System.nanoTime()
+                        val conversionTime = (conversionEnd - conversionStart) / 1_000_000 // ms
 
                         if (bitmap != null) {
                             // 선명도 측정 시간
@@ -168,12 +175,15 @@ fun SimpleCameraExample() {
                             val sharpnessEnd = System.nanoTime()
                             val sharpnessElapsed = (sharpnessEnd - sharpnessStart) / 1_000_000 // ms
 
+                            val totalEnd = System.nanoTime()
+                            val totalTime = (totalEnd - totalStart) / 1_000_000 // ms
+
                             Logger.d("SimpleCameraExample",
-                                "Frame #$frameCount - Sharpness: ${sharpnessElapsed}ms")
+                                "Frame #$frameCount - Conversion: ${conversionTime}ms, Sharpness: ${sharpnessElapsed}ms, Total: ${totalTime}ms")
 
                             withContext(Dispatchers.Main) {
                                 sharpness = calculatedSharpness
-                                sharpnessTime = sharpnessElapsed
+                                sharpnessTime = totalTime
                             }
 
                             // Bitmap 메모리 해제
