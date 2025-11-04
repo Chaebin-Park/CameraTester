@@ -171,7 +171,7 @@ fun SimpleCameraExample() {
                         val conversionStart = System.nanoTime()
                         val yPlaneBytes = imageProxy.toYPlaneByteArray()
                         val conversionEnd = System.nanoTime()
-                        val conversionTime = (conversionEnd - conversionStart) / 1_000_000 // ms
+                        val conversionTime = (conversionEnd - conversionStart) / 1_000_000.0 // ms
 
                         if (yPlaneBytes != null) {
                             // 선명도 측정 시간 (Native + ROI + Direct 최적화)
@@ -185,14 +185,14 @@ fun SimpleCameraExample() {
                                 roi = ROI.CENTER_50
                             )
                             val sharpnessEnd = System.nanoTime()
-                            val sharpnessElapsed = (sharpnessEnd - sharpnessStart) / 1_000_000 // ms
+                            val sharpnessElapsed = (sharpnessEnd - sharpnessStart) / 1_000_000.0 // ms
 
                             val totalEnd = System.nanoTime()
                             val totalTime = (totalEnd - totalStart) / 1_000_000 // ms
 
                             val implementation = if (useNative) "Native+ROI+Direct" else "Kotlin+ROI+Direct"
                             Logger.d("SimpleCameraExample",
-                                "Frame #$frameCount [$implementation] - Conversion: ${conversionTime}ms, Sharpness: ${sharpnessElapsed}ms, Total: ${totalTime}ms")
+                                "Frame #$frameCount [$implementation] - Conversion: ${String.format("%.2f", conversionTime)}ms, Sharpness: ${String.format("%.2f", sharpnessElapsed)}ms, Total: ${totalTime}ms")
 
                             withContext(Dispatchers.Main) {
                                 sharpness = calculatedSharpness
