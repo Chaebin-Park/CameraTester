@@ -12,6 +12,7 @@
 - ✅ **고성능 프레임 분석**: Native C++ 기반 (1-3ms 처리 시간)
 - ✅ **자동 프레임 스트리밍**: Flow API로 실시간 선명도/밝기 측정
 - ✅ **Jetpack Compose UI**: 커스터마이징 가능한 카메라 프리뷰
+- ✅ **Java/XML 완벽 지원**: 레거시 프로젝트에서도 사용 가능
 - ✅ **이미지 캡처**: 간단한 API로 고화질 사진 저장
 - ✅ **ROI 최적화**: 관심 영역 처리로 94% 메모리 절감
 - ✅ **전면/후면 카메라 전환**
@@ -21,8 +22,8 @@
 
 - **minSdk**: 24 (Android 7.0)
 - **compileSdk**: 34
-- **Kotlin**: 1.9.22+
-- **Compose**: BOM 2024.01.00+
+- **언어**: Kotlin / **Java 8+** ✅
+- **UI**: Jetpack Compose / **XML View** ✅
 - **지원 아키텍처**: armeabi-v7a, arm64-v8a, x86, x86_64
 
 ## 📦 설치
@@ -325,7 +326,8 @@ cameraManager.updatePreset(CameraPreset.HIGH)
 
 ## 📚 문서
 
-- [QUICK_START.md](QUICK_START.md) - 빠른 시작 가이드 (6가지 기본 예제)
+- [QUICK_START.md](QUICK_START.md) - 빠른 시작 가이드 (6가지 기본 예제, Kotlin)
+- [JAVA_USAGE.md](JAVA_USAGE.md) - **Java/XML 레거시 프로젝트 가이드**
 - [USAGE.md](USAGE.md) - 상세 API 가이드 및 고급 사용법
 - [IMAGE_FORMATS.md](../docs/IMAGE_FORMATS.md) - 이미지 처리 최적화 가이드
 - [PUBLISHING.md](PUBLISHING.md) - 라이브러리 빌드 및 배포 가이드

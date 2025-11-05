@@ -580,6 +580,123 @@ class CameraManager(
         analysisScope.cancel()
     }
 
+    // ==================== Java 친화적인 API ====================
+
+    private var frameAnalysisCallback: FrameAnalysisCallback? = null
+    private var callbackJob: Job? = null
+
+    /**
+     * Java/레거시 프로젝트를 위한 콜백 기반 프레임 분석
+     *
+     * 사용 예시 (Java):
+     * ```java
+     * cameraManager.setFrameAnalysisCallback(new FrameAnalysisCallback() {
+     *     @Override
+     *     public void onFrameAnalyzed(FrameAnalysisResult result) {
+     *         Log.d("Camera", "Sharpness: " + result.getSharpness());
+     *         result.getImageProxy().close(); // 반드시 호출!
+     *     }
+     * });
+     * ```
+     *
+     * @param callback 프레임 분석 콜백
+     */
+    fun setFrameAnalysisCallback(callback: FrameAnalysisCallback?) {
+        // 기존 콜백 제거
+        callbackJob?.cancel()
+        frameAnalysisCallback = callback
+
+        if (callback != null) {
+            // Flow를 콜백으로 변환
+            callbackJob = analysisScope.launch {
+                frameAnalysisFlow.collect { result ->
+                    try {
+                        callback.onFrameAnalyzed(result)
+                    } catch (e: Exception) {
+                        Logger.e("CameraManager", "Error in frame analysis callback", e)
+                        callback.onError(e)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Java 8+ 람다를 위한 간소화 버전
+     *
+     * 사용 예시 (Java 8+):
+     * ```java
+     * cameraManager.setFrameAnalysisCallback(result -> {
+     *     Log.d("Camera", "Sharpness: " + result.getSharpness());
+     *     result.getImageProxy().close();
+     * });
+     * ```
+     */
+    fun setFrameAnalysisCallback(callback: SimpleFrameAnalysisCallback?) {
+        if (callback != null) {
+            setFrameAnalysisCallback(object : FrameAnalysisCallback {
+                override fun onFrameAnalyzed(result: FrameAnalysisResult) {
+                    callback.onFrameAnalyzed(result)
+                }
+            })
+        } else {
+            setFrameAnalysisCallback(null as FrameAnalysisCallback?)
+        }
+    }
+
+    /**
+     * Java에서 사용하기 쉬운 동기식 카메라 시작
+     *
+     * 백그라운드 스레드에서 호출됩니다.
+     */
+    @JvmOverloads
+    fun startCameraSync(onSuccess: Runnable? = null, onError: ((Exception) -> Unit)? = null) {
+        analysisScope.launch {
+            try {
+                startCamera()
+                onSuccess?.run()
+            } catch (e: Exception) {
+                Logger.e("CameraManager", "Failed to start camera", e)
+                onError?.invoke(e)
+            }
+        }
+    }
+
+    /**
+     * Java에서 사용하기 쉬운 동기식 사진 캡처
+     */
+    fun capturePhotoSync(
+        outputDirectory: java.io.File,
+        onSuccess: (CapturedImageInfo) -> Unit,
+        onError: (Exception) -> Unit
+    ) {
+        analysisScope.launch {
+            try {
+                val info = capturePhoto(outputDirectory)
+                onSuccess(info)
+            } catch (e: Exception) {
+                Logger.e("CameraManager", "Failed to capture photo", e)
+                onError(e)
+            }
+        }
+    }
+
+    /**
+     * Java에서 사용하기 쉬운 동기식 카메라 전환
+     */
+    @JvmOverloads
+    fun toggleCameraSync(onSuccess: Runnable? = null, onError: ((Exception) -> Unit)? = null) {
+        analysisScope.launch {
+            try {
+                toggleCamera()
+                onSuccess?.run()
+            } catch (e: Exception) {
+                Logger.e("CameraManager", "Failed to toggle camera", e)
+                onError?.invoke(e)
+            }
+        }
+    }
+
     companion object {
         /**
          * 디바이스에서 사용 가능한 카메라 확인

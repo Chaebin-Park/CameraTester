@@ -118,12 +118,6 @@ publishing {
                         email.set("your.email@example.com")
                     }
                 }
-
-                scm {
-                    connection.set("scm:git:git://github.com/yourusername/kii-camera.git")
-                    developerConnection.set("scm:git:ssh://github.com:yourusername/kii-camera.git")
-                    url.set("https://github.com/yourusername/kii-camera")
-                }
             }
         }
     }

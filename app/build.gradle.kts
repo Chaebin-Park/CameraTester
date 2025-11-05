@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.kii.cameratester"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.kii.cameratester"
