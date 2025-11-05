@@ -26,7 +26,7 @@
 extern "C" JNIEXPORT jdouble JNICALL
 Java_com_kii_camera_FrameProcessor_calculateSharpnessNative(
     JNIEnv* env,
-    jobject /* obj */,
+    jclass clazz,
     jbyteArray pixelData,
     jint width,
     jint height,
@@ -107,7 +107,7 @@ Java_com_kii_camera_FrameProcessor_calculateSharpnessNative(
 extern "C" JNIEXPORT jdouble JNICALL
 Java_com_kii_camera_FrameProcessor_calculateSharpnessNativeROI(
     JNIEnv* env,
-    jobject /* obj */,
+    jclass clazz,
     jbyteArray pixelData,
     jint width,
     jint height,
@@ -192,24 +192,26 @@ Java_com_kii_camera_FrameProcessor_calculateSharpnessNativeNEON(
 #endif
 
 /**
- * 밝기 계산 (히스토그램 기반)
+ * 밝기 계산 (샘플링 + 단순 평균)
  *
  * @param env JNI 환경
  * @param obj JNI 객체
  * @param pixelData 그레이스케일 픽셀 데이터
  * @param width 이미지 폭
  * @param height 이미지 높이
+ * @param sampleRate 샘플링 비율 (1 = 모든 픽셀, 4 = 4픽셀마다)
  * @return 밝기 값 (0.0 ~ 1.0)
  */
 extern "C" JNIEXPORT jdouble JNICALL
 Java_com_kii_camera_FrameProcessor_calculateBrightnessNative(
     JNIEnv* env,
-    jobject /* obj */,
+    jclass clazz,
     jbyteArray pixelData,
     jint width,
-    jint height
+    jint height,
+    jint sampleRate
 ) {
-    if (pixelData == nullptr || width <= 0 || height <= 0) {
+    if (pixelData == nullptr || width <= 0 || height <= 0 || sampleRate < 1) {
         return 0.0;
     }
 
@@ -220,30 +222,86 @@ Java_com_kii_camera_FrameProcessor_calculateBrightnessNative(
 
     auto* unsignedPixels = reinterpret_cast<uint8_t*>(pixels);
 
-    // 히스토그램 생성
-    int histogram[256] = {0};
-    const int totalPixels = width * height;
+    // 단순 평균 계산 (샘플링 적용)
+    long long sum = 0;
+    int count = 0;
 
-    for (int i = 0; i < totalPixels; i++) {
-        histogram[unsignedPixels[i]]++;
-    }
-
-    // 가중 평균 계산
-    double weightedSum = 0.0;
-    double totalWeight = 0.0;
-
-    for (int i = 0; i < 256; i++) {
-        const int count = histogram[i];
-        const double brightness = i / 255.0;
-        // 밝은 영역에 더 높은 가중치
-        const double weight = count * (1.0 + brightness * 0.5);
-        weightedSum += brightness * weight;
-        totalWeight += weight;
+    for (int i = 0; i < height; i += sampleRate) {
+        for (int j = 0; j < width; j += sampleRate) {
+            sum += unsignedPixels[i * width + j];
+            count++;
+        }
     }
 
     env->ReleaseByteArrayElements(pixelData, pixels, JNI_ABORT);
 
-    return totalWeight > 0 ? weightedSum / totalWeight : 0.0;
+    return count > 0 ? (sum / (double)count) / 255.0 : 0.0;
+}
+
+/**
+ * ROI 영역의 밝기 계산
+ *
+ * @param env JNI 환경
+ * @param obj JNI 객체
+ * @param pixelData 그레이스케일 픽셀 데이터
+ * @param width 이미지 폭
+ * @param height 이미지 높이
+ * @param sampleRate 샘플링 비율
+ * @param roiLeft ROI 좌측 시작점
+ * @param roiTop ROI 상단 시작점
+ * @param roiWidth ROI 폭
+ * @param roiHeight ROI 높이
+ * @return 밝기 값 (0.0 ~ 1.0)
+ */
+extern "C" JNIEXPORT jdouble JNICALL
+Java_com_kii_camera_FrameProcessor_calculateBrightnessNativeROI(
+    JNIEnv* env,
+    jclass clazz,
+    jbyteArray pixelData,
+    jint width,
+    jint height,
+    jint sampleRate,
+    jint roiLeft,
+    jint roiTop,
+    jint roiWidth,
+    jint roiHeight
+) {
+    if (pixelData == nullptr || width <= 0 || height <= 0 || sampleRate < 1) {
+        return 0.0;
+    }
+
+    // ROI 범위 검증
+    if (roiLeft < 0 || roiTop < 0 || roiWidth <= 0 || roiHeight <= 0 ||
+        roiLeft + roiWidth > width || roiTop + roiHeight > height) {
+        LOGE("Invalid ROI for brightness: left=%d, top=%d, width=%d, height=%d",
+             roiLeft, roiTop, roiWidth, roiHeight);
+        return 0.0;
+    }
+
+    jbyte* pixels = env->GetByteArrayElements(pixelData, nullptr);
+    if (pixels == nullptr) {
+        return 0.0;
+    }
+
+    auto* unsignedPixels = reinterpret_cast<uint8_t*>(pixels);
+
+    // ROI 영역만 처리
+    const int roiRight = roiLeft + roiWidth;
+    const int roiBottom = roiTop + roiHeight;
+
+    long long sum = 0;
+    int count = 0;
+
+    for (int i = roiTop; i < roiBottom; i += sampleRate) {
+        for (int j = roiLeft; j < roiRight; j += sampleRate) {
+            sum += unsignedPixels[i * width + j];
+            count++;
+        }
+    }
+
+    env->ReleaseByteArrayElements(pixelData, pixels, JNI_ABORT);
+
+    return count > 0 ? (sum / (double)count) / 255.0 : 0.0;
 }
 
 /**

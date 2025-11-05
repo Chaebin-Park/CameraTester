@@ -327,7 +327,23 @@ object FrameProcessor {
     private external fun calculateBrightnessNative(
         pixelData: ByteArray,
         width: Int,
-        height: Int
+        height: Int,
+        sampleRate: Int
+    ): Double
+
+    /**
+     * Native ROI 밝기 계산 (JNI)
+     */
+    @JvmStatic
+    private external fun calculateBrightnessNativeROI(
+        pixelData: ByteArray,
+        width: Int,
+        height: Int,
+        sampleRate: Int,
+        roiLeft: Int,
+        roiTop: Int,
+        roiWidth: Int,
+        roiHeight: Int
     ): Double
 
     /**
@@ -483,19 +499,31 @@ object FrameProcessor {
      * @param pixelData Y plane ByteArray
      * @param width 이미지 폭
      * @param height 이미지 높이
+     * @param sampleRate 샘플링 비율 (기본값 4)
+     * @param roi ROI 영역 (null이면 전체 영역)
      * @return 밝기 값 (0.0 ~ 1.0)
      */
     fun calculateBrightnessDirect(
         pixelData: ByteArray,
         width: Int,
-        height: Int
+        height: Int,
+        sampleRate: Int = 4,
+        roi: ROI? = null
     ): Double {
         return try {
             if (nativeLibraryLoaded) {
-                calculateBrightnessNative(pixelData, width, height)
+                if (roi != null && roi != ROI.FULL) {
+                    val rect = roi.toRect(width, height)
+                    calculateBrightnessNativeROI(
+                        pixelData, width, height, sampleRate,
+                        rect.left, rect.top, rect.width(), rect.height()
+                    )
+                } else {
+                    calculateBrightnessNative(pixelData, width, height, sampleRate)
+                }
             } else {
                 // Fallback: Kotlin 구현
-                calculateBrightnessKotlin(pixelData, width, height)
+                calculateBrightnessKotlin(pixelData, width, height, sampleRate, roi)
             }
         } catch (e: Exception) {
             Logger.e("FrameProcessor", "Failed to calculate brightness direct", e)
@@ -509,31 +537,29 @@ object FrameProcessor {
     private fun calculateBrightnessKotlin(
         pixelData: ByteArray,
         width: Int,
-        height: Int
+        height: Int,
+        sampleRate: Int = 4,
+        roi: ROI? = null
     ): Double {
-        // 히스토그램 생성
-        val histogram = IntArray(256)
-        val totalPixels = width * height
+        val rect = roi?.toRect(width, height)
 
-        for (i in 0 until totalPixels) {
-            val value = pixelData[i].toInt() and 0xFF
-            histogram[value]++
+        val startY = rect?.top ?: 0
+        val endY = rect?.bottom ?: height
+        val startX = rect?.left ?: 0
+        val endX = rect?.right ?: width
+
+        var sum = 0L
+        var count = 0
+
+        for (i in startY until endY step sampleRate) {
+            for (j in startX until endX step sampleRate) {
+                val value = pixelData[i * width + j].toInt() and 0xFF
+                sum += value
+                count++
+            }
         }
 
-        // 가중 평균 계산
-        var weightedSum = 0.0
-        var totalWeight = 0.0
-
-        for (i in histogram.indices) {
-            val count = histogram[i]
-            val brightness = i / 255.0
-            // 밝은 영역에 더 높은 가중치
-            val weight = count * (1.0 + brightness * 0.5)
-            weightedSum += brightness * weight
-            totalWeight += weight
-        }
-
-        return if (totalWeight > 0) weightedSum / totalWeight else 0.0
+        return if (count > 0) (sum / count.toDouble()) / 255.0 else 0.0
     }
 
     /**

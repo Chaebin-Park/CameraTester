@@ -137,12 +137,14 @@ class CameraManager(
                         )
                     } else null
 
-                    // 밝기 계산
+                    // 밝기 계산 (최적화됨: 샘플링 + ROI)
                     val brightness = if (analysisConfig.enableBrightness) {
                         FrameProcessor.calculateBrightnessDirect(
                             pixelData = yPlaneBytes,
                             width = imageProxy.width,
-                            height = imageProxy.height
+                            height = imageProxy.height,
+                            sampleRate = analysisConfig.sampleRate,
+                            roi = analysisConfig.roi
                         )
                     } else null
 

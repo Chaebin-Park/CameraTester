@@ -56,6 +56,7 @@ import com.kii.camera.CameraManager
 import com.kii.camera.CameraPreset
 import com.kii.camera.CameraPreview
 import com.kii.camera.CameraState
+import com.kii.camera.CapturedImageInfo
 import com.kii.camera.FrameAnalysisConfig
 import com.kii.camera.FrameAnalysisResult
 import com.kii.camera.FrameProcessor
@@ -114,7 +115,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun CameraExampleApp() {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Simple", "Custom", "Shapes", "Analysis")
+    val tabs = listOf("Preview", "Custom", "Shapes", "Analysis")
 
     Scaffold(
         topBar = {
@@ -131,7 +132,7 @@ fun CameraExampleApp() {
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
-                0 -> SimpleCameraExample()
+                0 -> BasicPreviewExample()
                 1 -> CustomCameraExample()
                 2 -> ShapesCameraExample()
                 3 -> FrameAnalysisExample()
@@ -140,151 +141,18 @@ fun CameraExampleApp() {
     }
 }
 
+/**
+ * 가장 기본적인 카메라 프리뷰 예제
+ * 최소한의 코드로 카메라 프리뷰만 표시
+ */
 @Composable
-fun SimpleCameraExample() {
-    val context = LocalContext.current
-    var cameraManager by remember { mutableStateOf<CameraManager?>(null) }
-    var sharpness by remember { mutableStateOf<Double?>(null) }
-    var sharpnessTime by remember { mutableStateOf<Long?>(null) }
-    var capturedImageInfo by remember { mutableStateOf<com.kii.camera.CapturedImageInfo?>(null) }
-    var showCaptureInfo by remember { mutableStateOf(false) }
-
-    // 선명도 측정 (완전히 백그라운드에서 처리 - JPEG 우회 + Native 최적화)
-    LaunchedEffect(cameraManager) {
-        var frameCount = 0
-        val useNative = FrameProcessor.isNativeAvailable()
-        Logger.d("SimpleCameraExample", "Native library available: $useNative")
-
-        cameraManager?.frameFlow?.collect { imageProxy ->
-            frameCount++
-
-            // 10프레임 중 1개만 처리 (성능 최적화)
-            if (frameCount % 10 == 0) {
-                // 백그라운드 코루틴으로 완전히 분리
-                launch(Dispatchers.IO) {
-                    try {
-                        // 전체 처리 시간 측정
-                        val totalStart = System.nanoTime()
-
-                        // Y plane → ByteArray 직접 추출 (Bitmap 생성 우회)
-                        val conversionStart = System.nanoTime()
-                        val yPlaneBytes = imageProxy.toYPlaneByteArray()
-                        val conversionEnd = System.nanoTime()
-                        val conversionTime = (conversionEnd - conversionStart) / 1_000_000.0 // ms
-
-                        if (yPlaneBytes != null) {
-                            // 선명도 측정 시간 (Native + ROI + Direct 최적화)
-                            val sharpnessStart = System.nanoTime()
-                            // ByteArray 직접 처리 (중앙 50% ROI)
-                            val calculatedSharpness = FrameProcessor.calculateSharpnessDirect(
-                                pixelData = yPlaneBytes,
-                                width = imageProxy.width,
-                                height = imageProxy.height,
-                                sampleRate = 4,
-                                roi = ROI.CENTER_50
-                            )
-                            val sharpnessEnd = System.nanoTime()
-                            val sharpnessElapsed =
-                                (sharpnessEnd - sharpnessStart) / 1_000_000.0 // ms
-
-                            val totalEnd = System.nanoTime()
-                            val totalTime = (totalEnd - totalStart) / 1_000_000 // ms
-
-                            val implementation =
-                                if (useNative) "Native+ROI+Direct" else "Kotlin+ROI+Direct"
-                            Logger.d(
-                                "SimpleCameraExample",
-                                "Frame #$frameCount [$implementation] - Conversion: ${
-                                    String.format(
-                                        "%.2f",
-                                        conversionTime
-                                    )
-                                }ms, Sharpness: ${
-                                    String.format(
-                                        "%.2f",
-                                        sharpnessElapsed
-                                    )
-                                }ms, Total: ${totalTime}ms"
-                            )
-
-                            withContext(Dispatchers.Main) {
-                                sharpness = calculatedSharpness
-                                sharpnessTime = totalTime
-                            }
-                        }
-                    } finally {
-                        // 메모리 누수 방지
-                        imageProxy.close()
-                    }
-                }
-            } else {
-                // 처리하지 않는 프레임은 즉시 close
-                imageProxy.close()
-            }
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-
-        SimpleCameraPreview(
-            modifier = Modifier
-                .fillMaxWidth(),
-            onCameraManagerCreated = { manager ->
-                cameraManager = manager
-            },
-            onError = { error ->
-                // 에러 처리
-            }
-        )
-
-        // 카메라 전환 버튼 (우상단)
-        CameraSwitchButton(
-            onSwitch = { cameraManager?.toggleCamera() },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp)
-        )
-
-        // 캡처 버튼 (우하단)
-        CaptureButton(
-            onClick = {
-                cameraManager?.let { manager ->
-                    CoroutineScope(Dispatchers.Main).launch {
-                        try {
-                            val outputDir = context.getExternalFilesDir(null) ?: context.filesDir
-                            val info = manager.capturePhoto(outputDir)
-                            capturedImageInfo = info
-                            showCaptureInfo = true
-                            Logger.d("MainActivity", "Photo captured: $info")
-                        } catch (e: Exception) {
-                            Logger.e("MainActivity", "Failed to capture photo", e)
-                        }
-                    }
-                }
-            },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp)
-        )
-
-        // 카메라 정보 (좌하단)
-        CameraInfoOverlay(
-            cameraManager = cameraManager,
-            sharpness = sharpness,
-            sharpnessTime = sharpnessTime,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(16.dp)
-        )
-
-        // 캡처된 이미지 정보 다이얼로그
-        if (showCaptureInfo && capturedImageInfo != null) {
-            CapturedImageInfoDialog(
-                imageInfo = capturedImageInfo!!,
-                onDismiss = { showCaptureInfo = false }
-            )
-        }
-    }
+fun BasicPreviewExample() {
+    SimpleCameraPreview(
+        config = CameraConfig(
+            preset = CameraPreset.MEDIUM
+        ),
+        modifier = Modifier.fillMaxSize()
+    )
 }
 
 @Composable
@@ -628,7 +496,7 @@ fun CaptureButton(
  */
 @Composable
 fun CapturedImageInfoDialog(
-    imageInfo: com.kii.camera.CapturedImageInfo,
+    imageInfo: CapturedImageInfo,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -679,7 +547,9 @@ fun FrameAnalysisExample() {
     val lifecycleOwner = LocalLifecycleOwner.current
 
     // CameraManager 생성 (자동 프레임 분석 활성화)
-    val cameraManager = remember {
+    // key를 명확히 지정하여 불필요한 재생성 방지
+    val cameraManager = remember(context, lifecycleOwner) {
+        Logger.d("FrameAnalysisExample", "Creating CameraManager")
         CameraManager(
             context = context,
             lifecycleOwner = lifecycleOwner,
@@ -697,13 +567,15 @@ fun FrameAnalysisExample() {
     var processingTime by remember { mutableStateOf<Long?>(null) }
     var frameSize by remember { mutableStateOf<String?>(null) }
 
-    // CameraManager 시작
-    LaunchedEffect(cameraManager) {
+    // CameraManager 시작 (Unit key로 한 번만 실행)
+    LaunchedEffect(Unit) {
+        Logger.d("FrameAnalysisExample", "Starting camera")
         cameraManager.startCamera()
     }
 
-    // frameAnalysisFlow로부터 자동 분석 결과 수신
-    LaunchedEffect(cameraManager) {
+    // frameAnalysisFlow로부터 자동 분석 결과 수신 (Unit key로 한 번만 실행)
+    LaunchedEffect(Unit) {
+        Logger.d("FrameAnalysisExample", "Starting frame analysis collection")
         cameraManager.frameAnalysisFlow.collect { result ->
             sharpness = result.sharpness
             brightness = result.brightness
@@ -717,9 +589,10 @@ fun FrameAnalysisExample() {
         }
     }
 
-    // 정리
-    DisposableEffect(cameraManager) {
+    // 정리 (Unit key로 컴포넌트 생명주기와 연결)
+    DisposableEffect(Unit) {
         onDispose {
+            Logger.d("FrameAnalysisExample", "Disposing CameraManager")
             cameraManager.release()
         }
     }
@@ -873,12 +746,6 @@ fun FrameAnalysisExample() {
                             color = Color.Gray
                         )
                     }
-
-                    Text(
-                        "Using: FrameAnalysisConfig.HIGH_PERFORMANCE",
-                        fontSize = 10.sp,
-                        color = Color.Gray
-                    )
                 }
             }
         }
