@@ -9,7 +9,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        minSdk = 24
+        minSdk = 21
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
@@ -131,7 +131,7 @@ publishing {
     repositories {
         maven {
             name = "local"
-            url = uri("${project.buildDir}/repo")
+            url = uri("${layout.buildDirectory.get()}/repo")
         }
         // GitHub Packages 또는 Maven Central 설정은 필요시 추가
         // maven {

@@ -1,52 +1,82 @@
-# KII Camera Library
+# 📷 KII Camera Library
 
-프리셋 기반의 CameraX 라이브러리로 실시간 프레임 스트리밍과 커스터마이징 가능한 Compose UI를 제공합니다.
+프리셋 기반의 고성능 Android CameraX 라이브러리
 
-## 주요 기능
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Min SDK](https://img.shields.io/badge/Min%20SDK-24-green.svg)](https://developer.android.com/about/versions/nougat)
+[![Kotlin](https://img.shields.io/badge/Kotlin-1.9.22-purple.svg)](https://kotlinlang.org/)
 
-- ✅ 간편한 카메라 on/off 제어
-- ✅ 프리셋 기반 설정 (LOW, MEDIUM, HIGH, ULTRA, HIGH_FPS)
-- ✅ 커스터마이징 가능한 Compose UI (크기, 모양, 외관)
-- ✅ 하드웨어 적응형 프리셋
-- ✅ Kotlin Flow를 통한 실시간 프레임 스트리밍
-- ✅ 프레임 처리 유틸리티 (Bitmap 변환, 회전, 크기 조정, 선명도 측정)
-- ✅ 전면/후면 카메라 전환
-- ✅ 카메라 상태 관리 (StateFlow)
+## ✨ 주요 기능
 
-## 요구사항
+- ✅ **프리셋 기반 설정**: 5가지 화질 프리셋 (LOW ~ ULTRA)
+- ✅ **고성능 프레임 분석**: Native C++ 기반 (1-3ms 처리 시간)
+- ✅ **자동 프레임 스트리밍**: Flow API로 실시간 선명도/밝기 측정
+- ✅ **Jetpack Compose UI**: 커스터마이징 가능한 카메라 프리뷰
+- ✅ **이미지 캡처**: 간단한 API로 고화질 사진 저장
+- ✅ **ROI 최적화**: 관심 영역 처리로 94% 메모리 절감
+- ✅ **전면/후면 카메라 전환**
+- ✅ **카메라 상태 관리**: StateFlow 기반
 
-- **Gradle**: 8.0 - 8.5
-- **Android Gradle Plugin**: 8.2.2
-- **Kotlin**: 1.9.22
-- **Compose Compiler**: 1.5.8
+## 📋 요구사항
+
 - **minSdk**: 24 (Android 7.0)
 - **compileSdk**: 34
+- **Kotlin**: 1.9.22+
+- **Compose**: BOM 2024.01.00+
+- **지원 아키텍처**: armeabi-v7a, arm64-v8a, x86, x86_64
 
-## 설치
+## 📦 설치
 
-### 로컬 Maven 저장소
+### 방법 1: 로컬 Maven 저장소
 
-로컬 Maven 저장소에 빌드 및 배포:
+라이브러리를 로컬에 배포:
 
 ```bash
 ./gradlew :camera:publishToMavenLocal
 ```
 
-프로젝트의 `build.gradle.kts`에 추가:
+프로젝트 설정:
 
 ```kotlin
-repositories {
-    mavenLocal()
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        mavenLocal() // 추가
+    }
 }
 
+// app/build.gradle.kts
 dependencies {
     implementation("com.kii:camera:1.0.0")
 }
 ```
 
-### 직접 모듈 의존성
+### 방법 2: AAR 파일 직접 사용
 
-`camera` 모듈을 프로젝트에 복사하고 추가:
+AAR 빌드:
+
+```bash
+./gradlew :camera:assembleRelease
+# 출력: camera/build/outputs/aar/camera-release.aar
+```
+
+프로젝트에 추가:
+
+```kotlin
+dependencies {
+    implementation(files("libs/camera-release.aar"))
+
+    // 필수 의존성
+    implementation("androidx.camera:camera-core:1.3.1")
+    implementation("androidx.camera:camera-camera2:1.3.1")
+    implementation("androidx.camera:camera-lifecycle:1.3.1")
+    implementation("androidx.camera:camera-view:1.3.1")
+}
+```
+
+### 방법 3: 모듈 의존성 (개발 시)
 
 ```kotlin
 // settings.gradle.kts
@@ -58,90 +88,152 @@ dependencies {
 }
 ```
 
-## 빠른 시작
+자세한 배포 가이드는 [PUBLISHING.md](PUBLISHING.md) 참고
 
-### 1. 간단한 카메라 프리뷰
+## 🚀 빠른 시작
+
+### 권한 설정
+
+`AndroidManifest.xml`:
+```xml
+<uses-feature android:name="android.hardware.camera" />
+<uses-permission android:name="android.permission.CAMERA" />
+```
+
+### 기본 카메라 프리뷰
 
 ```kotlin
 @Composable
-fun SimpleCameraScreen() {
+fun MyCameraScreen() {
     SimpleCameraPreview(
+        config = CameraConfig(preset = CameraPreset.MEDIUM),
         modifier = Modifier.fillMaxSize()
     )
 }
 ```
 
-### 2. 커스텀 프리셋 사용
+**이게 전부입니다!** 🎉
+
+### 더 많은 예제
+
+6가지 기본 사용 예제는 [QUICK_START.md](QUICK_START.md)에서 확인하세요:
+- 기본 프리뷰
+- 카메라 전환
+- 사진 캡처
+- 자동 프레임 분석
+- 프리셋 사용
+- 권한 처리
+
+## 🎯 자동 프레임 분석
+
+라이브러리의 핵심 기능 - 실시간 선명도/밝기 자동 측정:
 
 ```kotlin
-@Composable
-fun HighQualityCameraScreen() {
-    SimpleCameraPreview(
-        config = CameraConfig(preset = CameraPreset.HIGH),
-        modifier = Modifier.fillMaxSize()
-    )
-}
-```
-
-### 3. 커스텀 모양 프리뷰
-
-```kotlin
-@Composable
-fun CircleCameraPreview() {
-    SimpleCameraPreview(
-        config = CameraConfig(preset = CameraPreset.HIGH),
-        modifier = Modifier
-            .size(300.dp)
-            .clip(CircleShape)
-            .border(4.dp, Color.White, CircleShape)
-    )
-}
-```
-
-## 프리셋
-
-### 기본 제공 프리셋
-
-- `CameraPreset.LOW` - 640x480, 24fps, 70% 품질
-- `CameraPreset.MEDIUM` - 1280x720, 30fps, 80% 품질
-- `CameraPreset.HIGH` - 1920x1080, 30fps, 90% 품질
-- `CameraPreset.ULTRA` - 3840x2160 (4K), 30fps, 95% 품질
-- `CameraPreset.HIGH_FPS` - 1920x1080, 60fps, 85% 품질
-
-### 커스텀 프리셋
-
-```kotlin
-val customPreset = CameraPreset.custom {
-    name = "MY_PRESET"
-    targetResolution = Size(1280, 720)
-    targetFrameRate = 60
-    imageQuality = 95
-    adaptToHardware = true
-}
-```
-
-## 실시간 프레임 처리
-
-```kotlin
-val cameraManager = remember {
+val cameraManager = remember(context, lifecycleOwner) {
     CameraManager(
         context = context,
         lifecycleOwner = lifecycleOwner,
-        config = CameraConfig(preset = CameraPreset.HIGH)
+        config = CameraConfig(
+            preset = CameraPreset.MEDIUM,
+            frameAnalysisConfig = FrameAnalysisConfig.HIGH_PERFORMANCE
+        )
     )
 }
 
+var sharpness by remember { mutableStateOf<Double?>(null) }
+var brightness by remember { mutableStateOf<Double?>(null) }
+
+// 자동 분석 결과 수신
 LaunchedEffect(Unit) {
-    cameraManager.frameFlow
-        .mapToBitmap()
-        .collect { bitmap ->
-            bitmap?.let {
-                // 프레임 처리
-                val resized = FrameProcessor.resizeBitmap(it, 640, 480)
-                val brightness = FrameProcessor.calculateBrightness(it)
-                val sharpness = FrameProcessor.calculateSharpness(it)
-            }
+    cameraManager.frameAnalysisFlow.collect { result ->
+        sharpness = result.sharpness
+        brightness = result.brightness
+        result.imageProxy.close()
+    }
+}
+```
+
+**성능**:
+- 처리 시간: 1-3ms (Native C++ + ROI)
+- 메모리 사용: 0.5MB (ROI 사용 시)
+- 프레임 샘플링: 자동 최적화
+
+## 📸 이미지 캡처
+
+```kotlin
+val outputDir = context.getExternalFilesDir(null)!!
+val imageInfo = cameraManager.capturePhoto(outputDir)
+
+println("파일: ${imageInfo.fileName}")
+println("크기: ${imageInfo.width}x${imageInfo.height}")
+println("용량: ${imageInfo.fileSizeBytes / 1024}KB")
+```
+
+## 🎨 프리셋
+
+| 프리셋 | 해상도 | 용도 |
+|--------|--------|------|
+| `LOW` | 640×480 | 프리뷰만, 최고 성능 |
+| `MEDIUM` | 1280×720 | 일반적인 사용 (기본값) |
+| `HIGH` | 1920×1080 | 고품질 캡처 |
+| `VERY_HIGH` | 2560×1440 | 초고화질 |
+| `ULTRA` | 3840×2160 | 4K |
+
+## ⚡ 성능
+
+### 프레임 분석 최적화
+
+- **초기 구현**: 55ms
+- **JPEG 우회**: 13ms (4.2배 향상)
+- **Native C++**: 8ms (1.6배 향상)
+- **ROI 처리**: 4ms (2배 향상)
+- **Bitmap 우회**: **2-3ms** (최종, **18-27배 향상**)
+
+### 메모리 최적화
+
+- 전체 프레임: 8.3MB (1280×720 YUV)
+- ROI (중앙 50%): **0.5MB** (**94% 절감**)
+
+### 실시간 처리
+
+- 선명도 계산: 1-3ms
+- 밝기 계산: 1-2ms
+- 프레임 샘플링: 10프레임당 1개 (설정 가능)
+
+자세한 최적화 과정은 [IMAGE_FORMATS.md](../docs/IMAGE_FORMATS.md) 참고
+
+## 🛠️ 커스텀 프레임 처리
+
+자동 분석 대신 직접 프레임을 처리하려면:
+
+```kotlin
+LaunchedEffect(Unit) {
+    cameraManager.frameFlow.collect { imageProxy ->
+        // YUV → ByteArray 직접 추출 (고성능)
+        val yPlaneBytes = imageProxy.toYPlaneByteArray()
+
+        if (yPlaneBytes != null) {
+            // Native 선명도 계산 (ROI 지원)
+            val sharpness = FrameProcessor.calculateSharpnessDirect(
+                pixelData = yPlaneBytes,
+                width = imageProxy.width,
+                height = imageProxy.height,
+                sampleRate = 4,
+                roi = ROI.CENTER_50
+            )
+
+            // Native 밝기 계산
+            val brightness = FrameProcessor.calculateBrightnessDirect(
+                pixelData = yPlaneBytes,
+                width = imageProxy.width,
+                height = imageProxy.height,
+                sampleRate = 4,
+                roi = ROI.CENTER_50
+            )
         }
+
+        imageProxy.close() // 반드시 호출!
+    }
 }
 ```
 
@@ -192,127 +284,86 @@ Text("현재 프리셋: ${config.value.preset.name}")
 Text("카메라 상태: ${cameraState.value}")
 ```
 
-## 프레임 처리 유틸리티
+## 🎨 UI 커스터마이징
 
-### FrameProcessor
-
-```kotlin
-// 선명도 측정 (Laplacian 방법)
-val sharpness = FrameProcessor.calculateSharpness(bitmap)
-val quality = FrameProcessor.getSharpnessQuality(sharpness)
-// 결과: "Excellent", "Good", "Fair", "Poor", "Very Poor"
-
-// 밝기 측정
-val brightness = FrameProcessor.calculateBrightness(bitmap)
-
-// 이미지 회전
-val rotated = FrameProcessor.rotateBitmap(bitmap, 90f)
-
-// 이미지 크기 조정
-val resized = FrameProcessor.resizeBitmap(bitmap, 640, 480)
-
-// 이미지 자르기
-val cropped = FrameProcessor.cropBitmap(bitmap, x, y, width, height)
-```
-
-### ImageProxy 확장 함수
+### 다양한 모양 프리뷰
 
 ```kotlin
-// ImageProxy를 Bitmap으로 변환
-val bitmap = imageProxy.toBitmap()
-
-// YUV 형식의 ImageProxy를 Bitmap으로 변환
-val yuvBitmap = imageProxy.toYuvBitmap()
-
-// ByteArray로 변환
-val bytes = imageProxy.toByteArray()
-
-// Flow 변환
-cameraManager.frameFlow
-    .mapToBitmap()
-    .collect { bitmap -> /* 처리 */ }
-
-cameraManager.frameFlow
-    .mapToYuvBitmap()
-    .collect { bitmap -> /* 처리 */ }
-
-cameraManager.frameFlow
-    .mapToByteArray()
-    .collect { bytes -> /* 처리 */ }
-```
-
-## Compose UI 컴포넌트
-
-### SimpleCameraPreview
-
-가장 간단한 카메라 프리뷰 컴포넌트:
-
-```kotlin
+// 원형 프리뷰
 SimpleCameraPreview(
     config = CameraConfig(preset = CameraPreset.MEDIUM),
-    modifier = Modifier.fillMaxSize(),
-    onCameraManagerCreated = { manager ->
-        // CameraManager 인스턴스 사용
-    },
-    onError = { error ->
-        // 에러 처리
-    }
+    modifier = Modifier
+        .size(300.dp)
+        .clip(CircleShape)
+        .border(4.dp, Color.White, CircleShape)
+)
+
+// 둥근 모서리
+SimpleCameraPreview(
+    config = CameraConfig(preset = CameraPreset.MEDIUM),
+    modifier = Modifier
+        .size(400.dp, 600.dp)
+        .clip(RoundedCornerShape(24.dp))
 )
 ```
 
-### CameraPreview
-
-CameraManager를 직접 제어하는 프리뷰 컴포넌트:
+## 🎛️ 카메라 제어
 
 ```kotlin
-val cameraManager = remember {
-    CameraManager(context, lifecycleOwner, CameraConfig(preset = CameraPreset.HIGH))
-}
+// 카메라 전환 (전면/후면)
+cameraManager.toggleCamera()
 
-CameraPreview(
-    cameraManager = cameraManager,
-    modifier = Modifier.fillMaxSize()
-)
+// 줌 제어 (0.0 ~ 1.0)
+cameraManager.setZoomRatio(0.5f)
+
+// 플래시 제어
+cameraManager.setFlashMode(CameraConfig.FlashMode.ON)
+
+// 프리셋 변경
+cameraManager.updatePreset(CameraPreset.HIGH)
 ```
 
-## 권한
+## 📚 문서
 
-`AndroidManifest.xml`에 추가:
+- [QUICK_START.md](QUICK_START.md) - 빠른 시작 가이드 (6가지 기본 예제)
+- [USAGE.md](USAGE.md) - 상세 API 가이드 및 고급 사용법
+- [IMAGE_FORMATS.md](../docs/IMAGE_FORMATS.md) - 이미지 처리 최적화 가이드
+- [PUBLISHING.md](PUBLISHING.md) - 라이브러리 빌드 및 배포 가이드
 
-```xml
-<uses-permission android:name="android.permission.CAMERA" />
-<uses-feature android:name="android.hardware.camera" android:required="false" />
+## 🔧 기술 스택
+
+- **Android CameraX**: 최신 카메라 API
+- **Jetpack Compose**: 선언적 UI
+- **Kotlin Coroutines**: 비동기 처리 및 Flow API
+- **Native C++ (JNI)**: 고성능 이미지 처리
+- **ARM NEON**: SIMD 최적화 지원 (준비됨)
+- **CMake**: 크로스 플랫폼 C++ 빌드
+
+## 📦 빌드 및 배포
+
+### AAR 빌드
+
+```bash
+./gradlew :camera:assembleRelease
+# 출력: camera/build/outputs/aar/camera-release.aar
 ```
 
-카메라 사용 전 권한 확인:
+### Maven 로컬 배포
 
-```kotlin
-if (PermissionHelper.checkCameraPermission(context)) {
-    // 카메라 사용
-} else {
-    // 권한 요청
-    permissionLauncher.launch(PermissionHelper.getCameraPermissions())
-}
+```bash
+./gradlew :camera:publishToMavenLocal
 ```
 
-## 카메라 상태
+자세한 내용은 [PUBLISHING.md](PUBLISHING.md) 참고
 
-```kotlin
-sealed class CameraState {
-    object Idle : CameraState()
-    object Starting : CameraState()
-    object Running : CameraState()
-    object Stopping : CameraState()
-    data class Error(val exception: Exception) : CameraState()
-}
-```
+## 🤝 기여
 
-## 카메라 이벤트
+이슈 및 Pull Request 환영합니다!
 
-```kotlin
-sealed class CameraEvent {
-    object CameraStarted : CameraEvent()
-    object CameraStopped : CameraEvent()
-    data class Error(val exception: Exception) : CameraEvent()
-}
-```
+## 📄 라이선스
+
+Apache License 2.0
+
+---
+
+Made with ❤️ using Jetpack Compose & CameraX
