@@ -216,6 +216,10 @@ data class FrameAnalysisConfig(
     val roi: ROI = ROI.CENTER_50,
     val useNativeProcessing: Boolean = true
 ) {
+    /**
+     * 하나 이상의 분석 옵션이 활성화되어 있는지 확인
+     */
+    fun hasAnyEnabled(): Boolean = enableSharpness || enableBrightness || enableLuminance
     companion object {
         /**
          * 기본 분석 설정 (선명도만, 10프레임당 1회)

@@ -114,6 +114,12 @@ class CameraManager(
                         return@collect
                     }
 
+                    // 분석 옵션이 모두 비활성화된 경우 early return
+                    if (!analysisConfig.hasAnyEnabled()) {
+                        imageProxy.close()
+                        return@collect
+                    }
+
                     val startTime = System.nanoTime()
 
                     // Y plane 추출 (가장 빠른 방법)
