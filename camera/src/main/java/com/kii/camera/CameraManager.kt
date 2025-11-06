@@ -26,9 +26,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
@@ -93,7 +92,7 @@ class CameraManager(
     private var surfaceProvider: Preview.SurfaceProvider? = null
 
     // 프레임 분석 Job (취소 가능)
-    private var frameAnalysisJob: kotlinx.coroutines.Job? = null
+    private var frameAnalysisJob: Job? = null
 
     /**
      * 프레임 자동 분석 시작
@@ -422,7 +421,7 @@ class CameraManager(
      * @return CapturedImageInfo 캡처된 이미지 정보 (파일 경로, 크기, 해상도 등)
      */
     suspend fun capturePhoto(outputDirectory: java.io.File): CapturedImageInfo {
-        return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+        return suspendCancellableCoroutine { continuation ->
             try {
                 if (imageCapture == null) {
                     val error = IllegalStateException("ImageCapture is not enabled. Set enableImageCapture=true in config")

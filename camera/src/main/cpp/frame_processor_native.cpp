@@ -16,7 +16,7 @@
  * 그레이스케일 이미지의 선명도 계산 (Laplacian 방법)
  *
  * @param env JNI 환경
- * @param obj JNI 객체
+ * @param clazz JNI 객체
  * @param pixelData 그레이스케일 픽셀 데이터 (ByteArray)
  * @param width 이미지 폭
  * @param height 이미지 높이
@@ -93,7 +93,7 @@ Java_com_kii_camera_FrameProcessor_calculateSharpnessNative(
  * ROI 영역의 선명도 계산
  *
  * @param env JNI 환경
- * @param obj JNI 객체
+ * @param clazz JNI 객체
  * @param pixelData 그레이스케일 픽셀 데이터 (ByteArray)
  * @param width 이미지 폭
  * @param height 이미지 높이
@@ -195,7 +195,7 @@ Java_com_kii_camera_FrameProcessor_calculateSharpnessNativeNEON(
  * 밝기 계산 (샘플링 + 단순 평균)
  *
  * @param env JNI 환경
- * @param obj JNI 객체
+ * @param clazz JNI 객체
  * @param pixelData 그레이스케일 픽셀 데이터
  * @param width 이미지 폭
  * @param height 이미지 높이
@@ -242,7 +242,7 @@ Java_com_kii_camera_FrameProcessor_calculateBrightnessNative(
  * ROI 영역의 밝기 계산
  *
  * @param env JNI 환경
- * @param obj JNI 객체
+ * @param clazz JNI 객체
  * @param pixelData 그레이스케일 픽셀 데이터
  * @param width 이미지 폭
  * @param height 이미지 높이
