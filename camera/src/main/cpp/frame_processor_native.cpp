@@ -305,6 +305,142 @@ Java_com_kii_camera_FrameProcessor_calculateBrightnessNativeROI(
 }
 
 /**
+ * Y-plane 히스토그램 계산 (256-bin)
+ *
+ * Based on LUMINANCE.md Section 4.1: "히스토그램 생성"
+ * Counts the number of pixels at each brightness level (0-255)
+ *
+ * @param env JNI 환경
+ * @param clazz JNI 객체
+ * @param yPlaneData Y-plane 픽셀 데이터 (ByteArray)
+ * @param width 이미지 폭
+ * @param height 이미지 높이
+ * @return 256-bin 히스토그램 (IntArray)
+ */
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_kii_camera_FrameProcessor_calculateHistogramNative(
+    JNIEnv* env,
+    jclass clazz,
+    jbyteArray yPlaneData,
+    jint width,
+    jint height
+) {
+    if (yPlaneData == nullptr || width <= 0 || height <= 0) {
+        LOGE("Invalid parameters for histogram");
+        return nullptr;
+    }
+
+    // ByteArray를 native 배열로 변환
+    jbyte* pixels = env->GetByteArrayElements(yPlaneData, nullptr);
+    if (pixels == nullptr) {
+        LOGE("Failed to get byte array elements for histogram");
+        return nullptr;
+    }
+
+    auto* unsignedPixels = reinterpret_cast<uint8_t*>(pixels);
+    const int totalPixels = width * height;
+
+    // 256-bin 히스토그램 초기화
+    int histogram[256] = {0};
+
+    // 모든 픽셀을 순회하며 히스토그램 생성
+    for (int i = 0; i < totalPixels; i++) {
+        const uint8_t pixelValue = unsignedPixels[i];
+        histogram[pixelValue]++;
+    }
+
+    // ByteArray 해제
+    env->ReleaseByteArrayElements(yPlaneData, pixels, JNI_ABORT);
+
+    // Java IntArray 생성 및 데이터 복사
+    jintArray result = env->NewIntArray(256);
+    if (result == nullptr) {
+        LOGE("Failed to create histogram result array");
+        return nullptr;
+    }
+
+    env->SetIntArrayRegion(result, 0, 256, histogram);
+
+    return result;
+}
+
+/**
+ * ROI 영역의 히스토그램 계산
+ *
+ * @param env JNI 환경
+ * @param clazz JNI 객체
+ * @param yPlaneData Y-plane 픽셀 데이터
+ * @param width 이미지 폭
+ * @param height 이미지 높이
+ * @param roiLeft ROI 좌측 시작점
+ * @param roiTop ROI 상단 시작점
+ * @param roiWidth ROI 폭
+ * @param roiHeight ROI 높이
+ * @return 256-bin 히스토그램 (IntArray)
+ */
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_kii_camera_FrameProcessor_calculateHistogramNativeROI(
+    JNIEnv* env,
+    jclass clazz,
+    jbyteArray yPlaneData,
+    jint width,
+    jint height,
+    jint roiLeft,
+    jint roiTop,
+    jint roiWidth,
+    jint roiHeight
+) {
+    if (yPlaneData == nullptr || width <= 0 || height <= 0) {
+        LOGE("Invalid parameters for histogram ROI");
+        return nullptr;
+    }
+
+    // ROI 범위 검증
+    if (roiLeft < 0 || roiTop < 0 || roiWidth <= 0 || roiHeight <= 0 ||
+        roiLeft + roiWidth > width || roiTop + roiHeight > height) {
+        LOGE("Invalid ROI for histogram: left=%d, top=%d, width=%d, height=%d",
+             roiLeft, roiTop, roiWidth, roiHeight);
+        return nullptr;
+    }
+
+    jbyte* pixels = env->GetByteArrayElements(yPlaneData, nullptr);
+    if (pixels == nullptr) {
+        LOGE("Failed to get byte array elements for histogram ROI");
+        return nullptr;
+    }
+
+    auto* unsignedPixels = reinterpret_cast<uint8_t*>(pixels);
+
+    // 256-bin 히스토그램 초기화
+    int histogram[256] = {0};
+
+    // ROI 영역만 처리
+    const int roiRight = roiLeft + roiWidth;
+    const int roiBottom = roiTop + roiHeight;
+
+    for (int i = roiTop; i < roiBottom; i++) {
+        for (int j = roiLeft; j < roiRight; j++) {
+            const int idx = i * width + j;
+            const uint8_t pixelValue = unsignedPixels[idx];
+            histogram[pixelValue]++;
+        }
+    }
+
+    env->ReleaseByteArrayElements(yPlaneData, pixels, JNI_ABORT);
+
+    // Java IntArray 생성 및 데이터 복사
+    jintArray result = env->NewIntArray(256);
+    if (result == nullptr) {
+        LOGE("Failed to create histogram ROI result array");
+        return nullptr;
+    }
+
+    env->SetIntArrayRegion(result, 0, 256, histogram);
+
+    return result;
+}
+
+/**
  * 라이브러리 로드 시 호출
  */
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {

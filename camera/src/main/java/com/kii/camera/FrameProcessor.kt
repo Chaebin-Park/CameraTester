@@ -347,6 +347,46 @@ object FrameProcessor {
     ): Double
 
     /**
+     * Native 히스토그램 계산 (JNI)
+     *
+     * Based on LUMINANCE.md Section 4.1
+     *
+     * @param yPlaneData Y-plane ByteArray
+     * @param width 이미지 폭
+     * @param height 이미지 높이
+     * @return 256-bin histogram (0-255 brightness levels)
+     */
+    @JvmStatic
+    private external fun calculateHistogramNative(
+        yPlaneData: ByteArray,
+        width: Int,
+        height: Int
+    ): IntArray
+
+    /**
+     * Native ROI 히스토그램 계산 (JNI)
+     *
+     * @param yPlaneData Y-plane ByteArray
+     * @param width 이미지 폭
+     * @param height 이미지 높이
+     * @param roiLeft ROI 좌측 시작점
+     * @param roiTop ROI 상단 시작점
+     * @param roiWidth ROI 폭
+     * @param roiHeight ROI 높이
+     * @return 256-bin histogram
+     */
+    @JvmStatic
+    private external fun calculateHistogramNativeROI(
+        yPlaneData: ByteArray,
+        width: Int,
+        height: Int,
+        roiLeft: Int,
+        roiTop: Int,
+        roiWidth: Int,
+        roiHeight: Int
+    ): IntArray
+
+    /**
      * 프레임 회전
      */
     fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
@@ -794,6 +834,157 @@ object FrameProcessor {
             else -> "Very Dark"
         }
     }
+
+    /**
+     * Y-plane 히스토그램 계산 (Direct, 가장 빠름)
+     *
+     * Based on LUMINANCE.md Section 4.1: "히스토그램 생성"
+     * Y-plane을 직접 분석하여 RGB 변환 오버헤드 회피
+     *
+     * @param yPlaneData Y-plane ByteArray
+     * @param width 이미지 폭
+     * @param height 이미지 높이
+     * @param roi ROI 영역 (null이면 전체 영역)
+     * @return 256-bin histogram (index 0-255, value = pixel count)
+     */
+    fun calculateHistogramDirect(
+        yPlaneData: ByteArray,
+        width: Int,
+        height: Int,
+        roi: ROI? = null
+    ): IntArray {
+        return try {
+            if (!nativeLibraryLoaded) {
+                // Fallback: Kotlin implementation
+                return calculateHistogramKotlin(yPlaneData)
+            }
+
+            if (roi != null && roi != ROI.FULL) {
+                val rect = roi.toRect(width, height)
+                calculateHistogramNativeROI(
+                    yPlaneData, width, height,
+                    rect.left, rect.top, rect.width(), rect.height()
+                )
+            } else {
+                calculateHistogramNative(yPlaneData, width, height)
+            }
+        } catch (e: Exception) {
+            Logger.e("FrameProcessor", "Failed to calculate histogram", e)
+            IntArray(256) { 0 }
+        }
+    }
+
+    /**
+     * Kotlin fallback histogram implementation
+     */
+    private fun calculateHistogramKotlin(yPlaneData: ByteArray): IntArray {
+        val histogram = IntArray(256) { 0 }
+        for (byte in yPlaneData) {
+            val pixelValue = byte.toInt() and 0xFF
+            histogram[pixelValue]++
+        }
+        return histogram
+    }
+
+    /**
+     * 히스토그램 기반 조명 품질 분석
+     *
+     * Based on LUMINANCE.md Section 4: "히스토그램 분석"
+     * - Section 4.2: 저조도 감지 (darknessRatio)
+     * - Section 4.3: 과다 노출 감지 (clippingRatio)
+     *
+     * @param histogram 256-bin histogram (from calculateHistogramDirect)
+     * @return LuminanceAnalysis with quality assessment
+     */
+    fun analyzeLuminanceQuality(
+        histogram: IntArray,
+        processingTimeMs: Long = 0
+    ): LuminanceAnalysis {
+        require(histogram.size == 256) { "Histogram must have 256 bins" }
+
+        val totalPixels = histogram.sum().toLong()
+        if (totalPixels == 0L) {
+            return LuminanceAnalysis.createDefault()
+        }
+
+        // Calculate darkness ratio (LUMINANCE.md Section 4.2)
+        // Count pixels in very dark range (0-50)
+        val darkPixels = histogram.sliceArray(0..LuminanceAnalysis.DARK_PIXEL_THRESHOLD).sum()
+        val darknessRatio = darkPixels.toDouble() / totalPixels
+
+        // Calculate clipping ratio (LUMINANCE.md Section 4.3)
+        // Count pixels at maximum brightness (255)
+        val clippedPixels = histogram[255]
+        val clippingRatio = clippedPixels.toDouble() / totalPixels
+
+        // Calculate average brightness
+        var sum = 0L
+        for (i in histogram.indices) {
+            sum += histogram[i].toLong() * i
+        }
+        val brightness = (sum.toDouble() / totalPixels) / 255.0
+
+        // Determine lighting quality
+        val quality = determineLightingQuality(darknessRatio, clippingRatio)
+
+        return LuminanceAnalysis(
+            brightness = brightness,
+            histogram = histogram,
+            darknessRatio = darknessRatio,
+            clippingRatio = clippingRatio,
+            quality = quality,
+            processingTimeMs = processingTimeMs
+        )
+    }
+
+    /**
+     * Determine lighting quality based on histogram analysis
+     *
+     * Logic based on LUMINANCE.md Section 7.3: "최종 판단 로직"
+     */
+    private fun determineLightingQuality(
+        darknessRatio: Double,
+        clippingRatio: Double
+    ): LightingQuality {
+        return when {
+            // Backlit: Both underexposed and overexposed regions
+            darknessRatio > LuminanceAnalysis.DARKNESS_THRESHOLD * 0.7 &&
+            clippingRatio > LuminanceAnalysis.CLIPPING_THRESHOLD * 0.5 ->
+                LightingQuality.BACKLIT
+
+            // Underexposed: Too dark
+            darknessRatio > LuminanceAnalysis.DARKNESS_THRESHOLD ->
+                LightingQuality.UNDEREXPOSED
+
+            // Overexposed: Too bright (clipped)
+            clippingRatio > LuminanceAnalysis.CLIPPING_THRESHOLD ->
+                LightingQuality.OVEREXPOSED
+
+            // Acceptable: Slight issues but usable
+            darknessRatio > 0.5 || clippingRatio > 0.05 ->
+                LightingQuality.ACCEPTABLE
+
+            // Optimal: Good lighting conditions
+            else -> LightingQuality.OPTIMAL
+        }
+    }
+
+    /**
+     * ImageProxy extension: Full luminance analysis
+     *
+     * Combines histogram calculation and quality analysis
+     *
+     * @param roi ROI region (null for full frame)
+     * @return Complete luminance analysis result
+     */
+    fun ImageProxy.analyzeLuminance(roi: ROI? = null): LuminanceAnalysis {
+        val startTime = System.currentTimeMillis()
+
+        val histogram = this.calculateHistogram(roi)
+        val processingTime = System.currentTimeMillis() - startTime
+
+        return FrameProcessor.analyzeLuminanceQuality(histogram, processingTime)
+    }
 }
 
 /**
@@ -830,4 +1021,15 @@ data class ExposureInfo(
             append(" ($method)")
         }
     }
+}
+
+/**
+ * ImageProxy extension: Calculate histogram from Y-plane
+ *
+ * Convenience function for histogram analysis
+ */
+fun ImageProxy.calculateHistogram(roi: ROI? = null): IntArray {
+    val yPlaneData = this.toYPlaneByteArray()
+        ?: return IntArray(256) { 0 }  // Return empty histogram if extraction fails
+    return FrameProcessor.calculateHistogramDirect(yPlaneData, width, height, roi)
 }

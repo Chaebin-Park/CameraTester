@@ -210,6 +210,7 @@ data class CapturedImageInfo(
 data class FrameAnalysisConfig(
     val enableSharpness: Boolean = true,
     val enableBrightness: Boolean = false,
+    val enableLuminance: Boolean = false,
     val sampleRate: Int = 4,
     val frameSamplingRate: Int = 10,
     val roi: ROI = ROI.CENTER_50,
@@ -222,11 +223,12 @@ data class FrameAnalysisConfig(
         val DEFAULT = FrameAnalysisConfig()
 
         /**
-         * 고성능 분석 (선명도+밝기, Native 처리)
+         * 고성능 분석 (선명도+밝기+조명 품질, Native 처리)
          */
         val HIGH_PERFORMANCE = FrameAnalysisConfig(
             enableSharpness = true,
             enableBrightness = true,
+            enableLuminance = true,
             sampleRate = 4,
             frameSamplingRate = 10,
             roi = ROI.CENTER_50,
@@ -266,6 +268,7 @@ data class FrameAnalysisResult(
     val imageProxy: ImageProxy,
     val sharpness: Double? = null,
     val brightness: Double? = null,
+    val luminanceAnalysis: LuminanceAnalysis? = null,
     val processingTimeMs: Long = 0,
     val width: Int,
     val height: Int,
@@ -305,6 +308,11 @@ data class FrameAnalysisResult(
             appendLine("  Resolution: ${width}x${height}")
             sharpness?.let { appendLine("  Sharpness: ${"%.2f".format(it)} (${getSharpnessLevel()})") }
             brightness?.let { appendLine("  Brightness: ${"%.2f".format(it)} (${getBrightnessLevel()})") }
+            luminanceAnalysis?.let {
+                appendLine("  Lighting Quality: ${it.quality.getDescription()}")
+                appendLine("  Darkness Ratio: ${"%.1f".format(it.darknessRatio * 100)}%")
+                appendLine("  Clipping Ratio: ${"%.1f".format(it.clippingRatio * 100)}%")
+            }
             appendLine("  Processing Time: ${processingTimeMs}ms")
             appendLine("  Timestamp: $timestamp")
         }

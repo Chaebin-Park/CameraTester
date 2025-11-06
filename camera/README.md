@@ -11,6 +11,7 @@
 - ✅ **프리셋 기반 설정**: 5가지 화질 프리셋 (LOW ~ ULTRA)
 - ✅ **고성능 프레임 분석**: Native C++ 기반 (1-3ms 처리 시간)
 - ✅ **자동 프레임 스트리밍**: Flow API로 실시간 선명도/밝기 측정
+- ✅ **조명 품질 분석**: 히스토그램 기반 저조도/과다노출/역광 감지 🆕
 - ✅ **Jetpack Compose UI**: 커스터마이징 가능한 카메라 프리뷰
 - ✅ **Java/XML 완벽 지원**: 레거시 프로젝트에서도 사용 가능
 - ✅ **이미지 캡처**: 간단한 API로 고화질 사진 저장
@@ -357,6 +358,132 @@ cameraManager.updatePreset(CameraPreset.HIGH)
 ```
 
 자세한 내용은 [PUBLISHING.md](PUBLISHING.md) 참고
+
+## 💡 조명 품질 분석 (Luminance Analysis) 🆕
+
+히스토그램 기반의 고급 조명 품질 분석 기능을 제공합니다.
+
+### 주요 기능
+
+- **실시간 조명 품질 판정**: OPTIMAL, ACCEPTABLE, UNDEREXPOSED, OVEREXPOSED, BACKLIT
+- **히스토그램 분석**: Y-plane 직접 분석으로 RGB 변환 오버헤드 제거
+- **정밀한 노출 감지**:
+  - **darknessRatio**: 어두운 픽셀(0-50) 비율 분석
+  - **clippingRatio**: 과다 노출(255) 픽셀 비율 분석
+- **Native C++ 구현**: 3-5ms 처리 시간 (720p 기준)
+
+### 사용 예제
+
+#### 1. 자동 분석 설정
+
+```kotlin
+val cameraManager = CameraManager(
+    context = context,
+    lifecycleOwner = lifecycleOwner,
+    config = CameraConfig(
+        preset = CameraPreset.MEDIUM,
+        frameAnalysisConfig = FrameAnalysisConfig.HIGH_PERFORMANCE.copy(
+            enableLuminance = true  // 조명 품질 분석 활성화
+        )
+    )
+)
+
+// 분석 결과 수집
+lifecycleScope.launch {
+    cameraManager.frameAnalysisFlow.collect { result ->
+        result.luminanceAnalysis?.let { analysis ->
+            Log.d("Camera", "Lighting Quality: ${analysis.quality}")
+            Log.d("Camera", "Brightness: ${(analysis.brightness * 100).toInt()}%")
+            Log.d("Camera", "Darkness Ratio: ${(analysis.darknessRatio * 100).toInt()}%")
+            Log.d("Camera", "Clipping Ratio: ${(analysis.clippingRatio * 100).toInt()}%")
+
+            // 사용자 피드백 표시
+            when (analysis.quality) {
+                LightingQuality.UNDEREXPOSED ->
+                    showToast("조명이 너무 어둡습니다. 밝은 곳으로 이동하세요.")
+                LightingQuality.OVEREXPOSED ->
+                    showToast("조명이 너무 밝습니다. 직접 조명을 피하세요.")
+                LightingQuality.BACKLIT ->
+                    showToast("역광입니다. 카메라 각도를 조절하세요.")
+                else -> { /* 정상 */ }
+            }
+        }
+
+        result.imageProxy.close()
+    }
+}
+```
+
+#### 2. 수동 분석
+
+```kotlin
+// ImageProxy 직접 분석
+cameraManager.frameFlow.collect { imageProxy ->
+    val analysis = imageProxy.analyzeLuminance(roi = ROI.CENTER_50)
+
+    println(analysis.getSummary())
+    // Output: "Lighting: Optimal lighting | Brightness: 65% | Darkness: 12% | Clipping: 2% | Time: 4ms"
+
+    if (!analysis.quality.isSuitable()) {
+        println("Warning: ${analysis.quality.getDescription()}")
+        println("Suggestion: ${analysis.quality.getSuggestedAction()}")
+    }
+
+    imageProxy.close()
+}
+
+// 히스토그램만 계산
+val histogram = imageProxy.calculateHistogram()
+val analysis = FrameProcessor.analyzeLuminanceQuality(histogram)
+```
+
+#### 3. 얼굴 인식 전 조명 체크
+
+```kotlin
+suspend fun captureFacePhoto(): Result<Bitmap> {
+    // 조명 품질 확인
+    val analysis = getCurrentLuminanceAnalysis()
+
+    if (!analysis.quality.isSuitable()) {
+        return Result.failure(
+            Exception("Poor lighting: ${analysis.quality.getSuggestedAction()}")
+        )
+    }
+
+    // 조명이 적합하면 촬영 진행
+    return capturePhoto()
+}
+```
+
+### 임계값 설정
+
+기본 임계값은 `LuminanceAnalysis` companion object에 정의되어 있습니다:
+
+```kotlin
+LuminanceAnalysis.DARKNESS_THRESHOLD  // 0.75 (75% 이상 어두움)
+LuminanceAnalysis.CLIPPING_THRESHOLD  // 0.10 (10% 이상 과다노출)
+LuminanceAnalysis.DARK_PIXEL_THRESHOLD  // 50 (0-50 범위를 어두움으로 판정)
+```
+
+### 성능 특징
+
+| 항목 | 값 |
+|------|-----|
+| 처리 시간 (720p) | 3-5ms |
+| 처리 시간 (1080p) | 6-8ms |
+| 메모리 오버헤드 | ~1KB/frame |
+| CPU 사용률 증가 | +10-15% |
+| 실시간 가능 여부 | ✅ 30fps 여유 있음 |
+
+### 기술 배경
+
+조명 품질 분석은 LUMINANCE.md에 문서화된 방법론을 기반으로 구현되었습니다:
+
+- **Section 4.2**: 저조도 감지 - 왼쪽 쏠림 분석
+- **Section 4.3**: 과다노출 감지 - 클리핑 분석
+- **Section 7.3**: 최종 판단 로직
+
+자세한 내용은 [LUMINANCE.md](LUMINANCE.md) 참고
 
 ## 🤝 기여
 

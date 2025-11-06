@@ -147,16 +147,30 @@ class CameraManager(
                         )
                     } else null
 
+                    // 조명 품질 분석 (히스토그램 기반)
+                    val luminanceAnalysis = if (analysisConfig.enableLuminance) {
+                        val histogram = FrameProcessor.calculateHistogramDirect(
+                            yPlaneData = yPlaneBytes,
+                            width = imageProxy.width,
+                            height = imageProxy.height,
+                            roi = analysisConfig.roi
+                        )
+                        val histogramEndTime = System.nanoTime()
+                        val histogramTimeMs = (histogramEndTime - startTime) / 1_000_000
+                        FrameProcessor.analyzeLuminanceQuality(histogram, histogramTimeMs)
+                    } else null
+
                     val endTime = System.nanoTime()
                     val processingTimeMs = (endTime - startTime) / 1_000_000
 
-                    Logger.d("CameraManager", "Frame analyzed: sharpness=$sharpness, brightness=$brightness, time=${processingTimeMs}ms")
+                    Logger.d("CameraManager", "Frame analyzed: sharpness=$sharpness, brightness=$brightness, lighting=${luminanceAnalysis?.quality}, time=${processingTimeMs}ms")
 
                     // 결과 emit
                     val result = FrameAnalysisResult(
                         imageProxy = imageProxy,
                         sharpness = sharpness,
                         brightness = brightness,
+                        luminanceAnalysis = luminanceAnalysis,
                         processingTimeMs = processingTimeMs,
                         width = imageProxy.width,
                         height = imageProxy.height

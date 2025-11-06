@@ -248,3 +248,40 @@ dependencies {
 - **Maven Coordinates**: `com.kii:camera:1.0.0`
 
 See `/camera/README.md` for detailed library documentation.
+
+## Git Commit Guidelines
+
+### Commit Message Format
+
+**IMPORTANT**: Keep commit messages compact and focused on changes only.
+
+**DO NOT include:**
+- ❌ `🤖 Generated with [Claude Code](https://claude.com/claude-code)`
+- ❌ `Co-Authored-By: Claude <noreply@anthropic.com>`
+- ❌ Any AI-related attribution or signatures
+
+**DO include:**
+- ✅ Clear, concise description of what changed
+- ✅ Key technical details if needed
+- ✅ Impact/reason for change (optional, if important)
+
+### Examples
+
+**Good:**
+```
+히스토그램 기반 조명 품질 분석 추가
+
+- LightingQuality enum 추가 (OPTIMAL, UNDEREXPOSED, OVEREXPOSED, BACKLIT)
+- Native 히스토그램 함수 구현 (3-5ms)
+- CameraManager에 luminance 분석 통합
+```
+
+**Bad:**
+```
+히스토그램 기반 조명 품질 분석 추가
+
+[long explanation...]
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
