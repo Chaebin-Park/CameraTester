@@ -346,10 +346,54 @@ Java_com_kii_camera_FrameProcessor_calculateHistogramNative(
     int histogram[256] = {0};
 
     // 샘플링 적용하여 히스토그램 생성
-    for (int i = 0; i < totalPixels; i += sampleRate) {
-        const uint8_t pixelValue = unsignedPixels[i];
-        histogram[pixelValue]++;
+#ifdef USE_NEON
+    // NEON 최적화 버전: 8개 픽셀을 동시에 처리
+    if (sampleRate == 1) {
+        // sampleRate=1일 때만 NEON 사용 (모든 픽셀 처리)
+        const int vectorPixels = totalPixels / 8 * 8;  // 8의 배수
+
+        // 8개씩 처리
+        for (int i = 0; i < vectorPixels; i += 8) {
+            uint8x8_t pixels = vld1_u8(unsignedPixels + i);
+
+            // 각 픽셀을 히스토그램에 추가 (NEON으로는 scatter가 어려워서 scalar로 처리)
+            histogram[vget_lane_u8(pixels, 0)]++;
+            histogram[vget_lane_u8(pixels, 1)]++;
+            histogram[vget_lane_u8(pixels, 2)]++;
+            histogram[vget_lane_u8(pixels, 3)]++;
+            histogram[vget_lane_u8(pixels, 4)]++;
+            histogram[vget_lane_u8(pixels, 5)]++;
+            histogram[vget_lane_u8(pixels, 6)]++;
+            histogram[vget_lane_u8(pixels, 7)]++;
+        }
+
+        // 나머지 픽셀 처리
+        for (int i = vectorPixels; i < totalPixels; i++) {
+            histogram[unsignedPixels[i]]++;
+        }
+    } else {
+        // Sampling 적용 시 기본 루프
+        for (int i = 0; i < totalPixels; i += sampleRate) {
+            histogram[unsignedPixels[i]]++;
+        }
     }
+#else
+    // Non-NEON: Loop unrolling for better performance
+    const int unrollPixels = totalPixels / (sampleRate * 4) * (sampleRate * 4);
+
+    // 4-way unrolled loop
+    for (int i = 0; i < unrollPixels; i += sampleRate * 4) {
+        histogram[unsignedPixels[i]]++;
+        histogram[unsignedPixels[i + sampleRate]]++;
+        histogram[unsignedPixels[i + sampleRate * 2]]++;
+        histogram[unsignedPixels[i + sampleRate * 3]]++;
+    }
+
+    // 나머지 픽셀 처리
+    for (int i = unrollPixels; i < totalPixels; i += sampleRate) {
+        histogram[unsignedPixels[i]]++;
+    }
+#endif
 
     // ByteArray 해제
     env->ReleaseByteArrayElements(yPlaneData, pixels, JNI_ABORT);
@@ -422,11 +466,22 @@ Java_com_kii_camera_FrameProcessor_calculateHistogramNativeROI(
     const int roiRight = roiLeft + roiWidth;
     const int roiBottom = roiTop + roiHeight;
 
+    // Loop unrolling for ROI (4-way)
     for (int i = roiTop; i < roiBottom; i += sampleRate) {
-        for (int j = roiLeft; j < roiRight; j += sampleRate) {
-            const int idx = i * width + j;
-            const uint8_t pixelValue = unsignedPixels[idx];
-            histogram[pixelValue]++;
+        int j = roiLeft;
+        const int unrollWidth = roiLeft + (roiWidth / (sampleRate * 4)) * (sampleRate * 4);
+
+        // 4-way unrolled inner loop
+        for (; j < unrollWidth; j += sampleRate * 4) {
+            histogram[unsignedPixels[i * width + j]]++;
+            histogram[unsignedPixels[i * width + j + sampleRate]]++;
+            histogram[unsignedPixels[i * width + j + sampleRate * 2]]++;
+            histogram[unsignedPixels[i * width + j + sampleRate * 3]]++;
+        }
+
+        // 나머지 픽셀 처리
+        for (; j < roiRight; j += sampleRate) {
+            histogram[unsignedPixels[i * width + j]]++;
         }
     }
 
