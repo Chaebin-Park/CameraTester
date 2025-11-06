@@ -126,7 +126,7 @@ class CameraManager(
                     }
 
                     // 선명도 계산
-                    var sharpnessTimeMs = 0L
+                    var sharpnessTimeMs = 0.0
                     val sharpnessStartTime = System.nanoTime()
                     val sharpness = if (analysisConfig.enableSharpness) {
                         val result = FrameProcessor.calculateSharpnessDirect(
@@ -136,12 +136,12 @@ class CameraManager(
                             sampleRate = analysisConfig.sampleRate,
                             roi = analysisConfig.roi
                         )
-                        sharpnessTimeMs = (System.nanoTime() - sharpnessStartTime) / 1_000_000
+                        sharpnessTimeMs = (System.nanoTime() - sharpnessStartTime) / 1_000_000.0
                         result
                     } else null
 
                     // 밝기 계산 (최적화됨: 샘플링 + ROI)
-                    var brightnessTimeMs = 0L
+                    var brightnessTimeMs = 0.0
                     val brightnessStartTime = System.nanoTime()
                     val brightness = if (analysisConfig.enableBrightness) {
                         val result = FrameProcessor.calculateBrightnessDirect(
@@ -151,12 +151,12 @@ class CameraManager(
                             sampleRate = analysisConfig.sampleRate,
                             roi = analysisConfig.roi
                         )
-                        brightnessTimeMs = (System.nanoTime() - brightnessStartTime) / 1_000_000
+                        brightnessTimeMs = (System.nanoTime() - brightnessStartTime) / 1_000_000.0
                         result
                     } else null
 
                     // 조명 품질 분석 (히스토그램 기반)
-                    var luminanceTimeMs = 0L
+                    var luminanceTimeMs = 0.0
                     val luminanceStartTime = System.nanoTime()
                     val luminanceAnalysis = if (analysisConfig.enableLuminance) {
                         val histogram = FrameProcessor.calculateHistogramDirect(
@@ -166,14 +166,14 @@ class CameraManager(
                             roi = analysisConfig.roi
                         )
                         val result = FrameProcessor.analyzeLuminanceQuality(histogram)
-                        luminanceTimeMs = (System.nanoTime() - luminanceStartTime) / 1_000_000
+                        luminanceTimeMs = (System.nanoTime() - luminanceStartTime) / 1_000_000.0
                         result.copy(processingTimeMs = luminanceTimeMs)
                     } else null
 
                     val endTime = System.nanoTime()
-                    val processingTimeMs = (endTime - startTime) / 1_000_000
+                    val processingTimeMs = (endTime - startTime) / 1_000_000.0
 
-                    Logger.d("CameraManager", "Frame analyzed: sharpness=$sharpness [${sharpnessTimeMs}ms], brightness=$brightness [${brightnessTimeMs}ms], lighting=${luminanceAnalysis?.quality} [${luminanceTimeMs}ms], total=${processingTimeMs}ms")
+                    Logger.d("CameraManager", "Frame analyzed: sharpness=$sharpness [${"%.2f".format(sharpnessTimeMs)}ms], brightness=$brightness [${"%.2f".format(brightnessTimeMs)}ms], lighting=${luminanceAnalysis?.quality} [${"%.2f".format(luminanceTimeMs)}ms], total=${"%.2f".format(processingTimeMs)}ms")
 
                     // 결과 emit
                     val result = FrameAnalysisResult(

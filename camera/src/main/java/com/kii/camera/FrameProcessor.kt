@@ -898,7 +898,7 @@ object FrameProcessor {
      */
     fun analyzeLuminanceQuality(
         histogram: IntArray,
-        processingTimeMs: Long = 0
+        processingTimeMs: Double = 0.0
     ): LuminanceAnalysis {
         require(histogram.size == 256) { "Histogram must have 256 bins" }
 
@@ -978,10 +978,10 @@ object FrameProcessor {
      * @return Complete luminance analysis result
      */
     fun ImageProxy.analyzeLuminance(roi: ROI? = null): LuminanceAnalysis {
-        val startTime = System.currentTimeMillis()
+        val startTime = System.nanoTime()
 
         val histogram = this.calculateHistogram(roi)
-        val processingTime = System.currentTimeMillis() - startTime
+        val processingTime = (System.nanoTime() - startTime) / 1_000_000.0
 
         return FrameProcessor.analyzeLuminanceQuality(histogram, processingTime)
     }

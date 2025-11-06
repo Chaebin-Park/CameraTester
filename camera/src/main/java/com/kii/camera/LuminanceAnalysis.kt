@@ -25,7 +25,7 @@ data class LuminanceAnalysis(
     val darknessRatio: Double,
     val clippingRatio: Double,
     val quality: LightingQuality,
-    val processingTimeMs: Long = 0
+    val processingTimeMs: Double = 0.0
 ) {
     /**
      * Returns true if the frame is underexposed (too dark).
@@ -81,7 +81,7 @@ data class LuminanceAnalysis(
             append(" | Darkness: ${(darknessRatio * 100).toInt()}%")
             append(" | Clipping: ${(clippingRatio * 100).toInt()}%")
             if (processingTimeMs > 0) {
-                append(" | Time: ${processingTimeMs}ms")
+                append(" | Time: ${"%.2f".format(processingTimeMs)}ms")
             }
         }
     }
@@ -142,7 +142,7 @@ data class LuminanceAnalysis(
             darknessRatio = 0.0,
             clippingRatio = 0.0,
             quality = LightingQuality.UNKNOWN,
-            processingTimeMs = 0
+            processingTimeMs = 0.0
         )
     }
 }

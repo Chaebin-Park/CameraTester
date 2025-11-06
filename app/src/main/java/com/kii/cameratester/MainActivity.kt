@@ -418,8 +418,8 @@ fun CameraInfoOverlay(
     modifier: Modifier = Modifier,
     sharpness: Double? = null,
     brightness: Double? = null,
-    sharpnessTime: Long? = null,
-    brightnessTime: Long? = null,
+    sharpnessTime: Double? = null,
+    brightnessTime: Double? = null,
     extraInfo: String = ""
 ) {
     val config = cameraManager?.configState?.collectAsState()?.value
@@ -445,12 +445,12 @@ fun CameraInfoOverlay(
         }
         sharpness?.let { s ->
             val quality = FrameProcessor.getSharpnessQuality(s)
-            val timeStr = sharpnessTime?.let { " [${it}ms]" } ?: ""
+            val timeStr = sharpnessTime?.let { " [${"%.2f".format(it)}ms]" } ?: ""
             appendLine("Sharpness: %.1f ($quality)$timeStr".format(s))
         }
         brightness?.let { b ->
             val quality = FrameProcessor.getBrightnessQuality(b)
-            val timeStr = brightnessTime?.let { " [${it}ms]" } ?: ""
+            val timeStr = brightnessTime?.let { " [${"%.2f".format(it)}ms]" } ?: ""
             appendLine("Brightness: %.2f ($quality)$timeStr".format(b))
         }
         if (extraInfo.isNotEmpty()) {
@@ -565,10 +565,10 @@ fun FrameAnalysisExample() {
     var sharpnessLevel by remember { mutableStateOf<FrameAnalysisResult.SharpnessLevel?>(null) }
     var brightnessLevel by remember { mutableStateOf<FrameAnalysisResult.BrightnessLevel?>(null) }
     var luminanceAnalysis by remember { mutableStateOf<com.kii.camera.LuminanceAnalysis?>(null) }
-    var processingTime by remember { mutableStateOf<Long?>(null) }
-    var sharpnessTime by remember { mutableStateOf<Long?>(null) }
-    var brightnessTime by remember { mutableStateOf<Long?>(null) }
-    var luminanceTime by remember { mutableStateOf<Long?>(null) }
+    var processingTime by remember { mutableStateOf<Double?>(null) }
+    var sharpnessTime by remember { mutableStateOf<Double?>(null) }
+    var brightnessTime by remember { mutableStateOf<Double?>(null) }
+    var luminanceTime by remember { mutableStateOf<Double?>(null) }
     var frameSize by remember { mutableStateOf<String?>(null) }
 
     // CameraManager 시작 (Unit key로 한 번만 실행)
@@ -708,7 +708,7 @@ fun FrameAnalysisExample() {
                                 sharpnessTime?.let { time ->
                                     if (time > 0) {
                                         Text(
-                                            "[${time}ms]",
+                                            "[${"%.2f".format(time)}ms]",
                                             fontSize = 10.sp,
                                             color = Color.Gray
                                         )
@@ -755,7 +755,7 @@ fun FrameAnalysisExample() {
                                 brightnessTime?.let { time ->
                                     if (time > 0) {
                                         Text(
-                                            "[${time}ms]",
+                                            "[${"%.2f".format(time)}ms]",
                                             fontSize = 10.sp,
                                             color = Color.Gray
                                         )
@@ -798,7 +798,7 @@ fun FrameAnalysisExample() {
                                 luminanceTime?.let { time ->
                                     if (time > 0) {
                                         Text(
-                                            "[${time}ms]",
+                                            "[${"%.2f".format(time)}ms]",
                                             fontSize = 10.sp,
                                             color = Color.Gray
                                         )
@@ -819,7 +819,7 @@ fun FrameAnalysisExample() {
 
                     processingTime?.let {
                         Text(
-                            "Total: ${it}ms",
+                            "Total: ${"%.2f".format(it)}ms",
                             fontSize = 11.sp,
                             color = Color.Gray
                         )
