@@ -564,7 +564,11 @@ fun FrameAnalysisExample() {
     var brightness by remember { mutableStateOf<Double?>(null) }
     var sharpnessLevel by remember { mutableStateOf<FrameAnalysisResult.SharpnessLevel?>(null) }
     var brightnessLevel by remember { mutableStateOf<FrameAnalysisResult.BrightnessLevel?>(null) }
+    var luminanceAnalysis by remember { mutableStateOf<com.kii.camera.LuminanceAnalysis?>(null) }
     var processingTime by remember { mutableStateOf<Long?>(null) }
+    var sharpnessTime by remember { mutableStateOf<Long?>(null) }
+    var brightnessTime by remember { mutableStateOf<Long?>(null) }
+    var luminanceTime by remember { mutableStateOf<Long?>(null) }
     var frameSize by remember { mutableStateOf<String?>(null) }
 
     // CameraManager 시작 (Unit key로 한 번만 실행)
@@ -579,9 +583,13 @@ fun FrameAnalysisExample() {
         cameraManager.frameAnalysisFlow.collect { result ->
             sharpness = result.sharpness
             brightness = result.brightness
+            luminanceAnalysis = result.luminanceAnalysis
             sharpnessLevel = result.getSharpnessLevel()
             brightnessLevel = result.getBrightnessLevel()
             processingTime = result.processingTimeMs
+            sharpnessTime = result.sharpnessTimeMs
+            brightnessTime = result.brightnessTimeMs
+            luminanceTime = result.luminanceTimeMs
             frameSize = "${result.width}x${result.height}"
 
             // ImageProxy는 자동으로 관리되므로 별도 close 불필요
@@ -697,6 +705,15 @@ fun FrameAnalysisExample() {
                                         }
                                     )
                                 }
+                                sharpnessTime?.let { time ->
+                                    if (time > 0) {
+                                        Text(
+                                            "[${time}ms]",
+                                            fontSize = 10.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
                             } ?: Text("Sharpness: -", style = MaterialTheme.typography.bodyMedium)
                         }
 
@@ -735,13 +752,74 @@ fun FrameAnalysisExample() {
                                         }
                                     )
                                 }
+                                brightnessTime?.let { time ->
+                                    if (time > 0) {
+                                        Text(
+                                            "[${time}ms]",
+                                            fontSize = 10.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
                             } ?: Text("Brightness: -", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+
+                    // Luminance Analysis
+                    luminanceAnalysis?.let { analysis ->
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                "Lighting Quality: ${analysis.quality.name.replace("_", " ")}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = when (analysis.quality) {
+                                    com.kii.camera.LightingQuality.OPTIMAL -> Color(0xFF4CAF50)
+                                    com.kii.camera.LightingQuality.ACCEPTABLE -> Color(0xFF8BC34A)
+                                    com.kii.camera.LightingQuality.UNDEREXPOSED -> Color(0xFFF44336)
+                                    com.kii.camera.LightingQuality.OVEREXPOSED -> Color(0xFFFF9800)
+                                    com.kii.camera.LightingQuality.BACKLIT -> Color(0xFFFF5722)
+                                    else -> Color.Gray
+                                }
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    "Dark: ${(analysis.darknessRatio * 100).toInt()}%",
+                                    fontSize = 11.sp,
+                                    color = Color.Gray
+                                )
+                                Text(
+                                    "Clip: ${(analysis.clippingRatio * 100).toInt()}%",
+                                    fontSize = 11.sp,
+                                    color = Color.Gray
+                                )
+                                luminanceTime?.let { time ->
+                                    if (time > 0) {
+                                        Text(
+                                            "[${time}ms]",
+                                            fontSize = 10.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
+                            }
+                            if (!analysis.quality.isSuitable()) {
+                                analysis.quality.getSuggestedAction()?.let { suggestion ->
+                                    Text(
+                                        "💡 $suggestion",
+                                        fontSize = 10.sp,
+                                        color = Color(0xFFFF9800)
+                                    )
+                                }
+                            }
                         }
                     }
 
                     processingTime?.let {
                         Text(
-                            "Processing: ${it}ms",
+                            "Total: ${it}ms",
                             fontSize = 11.sp,
                             color = Color.Gray
                         )

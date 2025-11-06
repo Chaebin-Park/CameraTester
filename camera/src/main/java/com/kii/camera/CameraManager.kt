@@ -126,28 +126,38 @@ class CameraManager(
                     }
 
                     // 선명도 계산
+                    var sharpnessTimeMs = 0L
+                    val sharpnessStartTime = System.nanoTime()
                     val sharpness = if (analysisConfig.enableSharpness) {
-                        FrameProcessor.calculateSharpnessDirect(
+                        val result = FrameProcessor.calculateSharpnessDirect(
                             pixelData = yPlaneBytes,
                             width = imageProxy.width,
                             height = imageProxy.height,
                             sampleRate = analysisConfig.sampleRate,
                             roi = analysisConfig.roi
                         )
+                        sharpnessTimeMs = (System.nanoTime() - sharpnessStartTime) / 1_000_000
+                        result
                     } else null
 
                     // 밝기 계산 (최적화됨: 샘플링 + ROI)
+                    var brightnessTimeMs = 0L
+                    val brightnessStartTime = System.nanoTime()
                     val brightness = if (analysisConfig.enableBrightness) {
-                        FrameProcessor.calculateBrightnessDirect(
+                        val result = FrameProcessor.calculateBrightnessDirect(
                             pixelData = yPlaneBytes,
                             width = imageProxy.width,
                             height = imageProxy.height,
                             sampleRate = analysisConfig.sampleRate,
                             roi = analysisConfig.roi
                         )
+                        brightnessTimeMs = (System.nanoTime() - brightnessStartTime) / 1_000_000
+                        result
                     } else null
 
                     // 조명 품질 분석 (히스토그램 기반)
+                    var luminanceTimeMs = 0L
+                    val luminanceStartTime = System.nanoTime()
                     val luminanceAnalysis = if (analysisConfig.enableLuminance) {
                         val histogram = FrameProcessor.calculateHistogramDirect(
                             yPlaneData = yPlaneBytes,
@@ -155,15 +165,15 @@ class CameraManager(
                             height = imageProxy.height,
                             roi = analysisConfig.roi
                         )
-                        val histogramEndTime = System.nanoTime()
-                        val histogramTimeMs = (histogramEndTime - startTime) / 1_000_000
-                        FrameProcessor.analyzeLuminanceQuality(histogram, histogramTimeMs)
+                        val result = FrameProcessor.analyzeLuminanceQuality(histogram)
+                        luminanceTimeMs = (System.nanoTime() - luminanceStartTime) / 1_000_000
+                        result.copy(processingTimeMs = luminanceTimeMs)
                     } else null
 
                     val endTime = System.nanoTime()
                     val processingTimeMs = (endTime - startTime) / 1_000_000
 
-                    Logger.d("CameraManager", "Frame analyzed: sharpness=$sharpness, brightness=$brightness, lighting=${luminanceAnalysis?.quality}, time=${processingTimeMs}ms")
+                    Logger.d("CameraManager", "Frame analyzed: sharpness=$sharpness [${sharpnessTimeMs}ms], brightness=$brightness [${brightnessTimeMs}ms], lighting=${luminanceAnalysis?.quality} [${luminanceTimeMs}ms], total=${processingTimeMs}ms")
 
                     // 결과 emit
                     val result = FrameAnalysisResult(
@@ -172,6 +182,9 @@ class CameraManager(
                         brightness = brightness,
                         luminanceAnalysis = luminanceAnalysis,
                         processingTimeMs = processingTimeMs,
+                        sharpnessTimeMs = sharpnessTimeMs,
+                        brightnessTimeMs = brightnessTimeMs,
+                        luminanceTimeMs = luminanceTimeMs,
                         width = imageProxy.width,
                         height = imageProxy.height
                     )

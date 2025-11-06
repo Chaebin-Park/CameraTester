@@ -270,6 +270,9 @@ data class FrameAnalysisResult(
     val brightness: Double? = null,
     val luminanceAnalysis: LuminanceAnalysis? = null,
     val processingTimeMs: Long = 0,
+    val sharpnessTimeMs: Long = 0,
+    val brightnessTimeMs: Long = 0,
+    val luminanceTimeMs: Long = 0,
     val width: Int,
     val height: Int,
     val timestamp: Long = System.currentTimeMillis()
