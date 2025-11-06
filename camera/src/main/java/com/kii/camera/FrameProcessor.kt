@@ -908,27 +908,33 @@ object FrameProcessor {
     ): LuminanceAnalysis {
         require(histogram.size == 256) { "Histogram must have 256 bins" }
 
-        val totalPixels = histogram.sum().toLong()
+        // Single-pass histogram analysis (optimized)
+        var totalPixels = 0L
+        var darkPixels = 0
+        var brightnessSum = 0L
+
+        for (i in histogram.indices) {
+            val count = histogram[i]
+            totalPixels += count
+
+            // Count dark pixels (0-50 range)
+            if (i <= LuminanceAnalysis.DARK_PIXEL_THRESHOLD) {
+                darkPixels += count
+            }
+
+            // Accumulate for average brightness
+            brightnessSum += count.toLong() * i
+        }
+
         if (totalPixels == 0L) {
             return LuminanceAnalysis.createDefault()
         }
 
-        // Calculate darkness ratio (LUMINANCE.md Section 4.2)
-        // Count pixels in very dark range (0-50)
-        val darkPixels = histogram.sliceArray(0..LuminanceAnalysis.DARK_PIXEL_THRESHOLD).sum()
+        // Calculate ratios
         val darknessRatio = darkPixels.toDouble() / totalPixels
-
-        // Calculate clipping ratio (LUMINANCE.md Section 4.3)
-        // Count pixels at maximum brightness (255)
         val clippedPixels = histogram[255]
         val clippingRatio = clippedPixels.toDouble() / totalPixels
-
-        // Calculate average brightness
-        var sum = 0L
-        for (i in histogram.indices) {
-            sum += histogram[i].toLong() * i
-        }
-        val brightness = (sum.toDouble() / totalPixels) / 255.0
+        val brightness = (brightnessSum.toDouble() / totalPixels) / 255.0
 
         // Determine lighting quality
         val quality = determineLightingQuality(darknessRatio, clippingRatio)
