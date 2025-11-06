@@ -354,13 +354,15 @@ object FrameProcessor {
      * @param yPlaneData Y-plane ByteArray
      * @param width 이미지 폭
      * @param height 이미지 높이
+     * @param sampleRate 샘플링 비율 (1 = 모든 픽셀, 4 = 4픽셀마다)
      * @return 256-bin histogram (0-255 brightness levels)
      */
     @JvmStatic
     private external fun calculateHistogramNative(
         yPlaneData: ByteArray,
         width: Int,
-        height: Int
+        height: Int,
+        sampleRate: Int
     ): IntArray
 
     /**
@@ -369,6 +371,7 @@ object FrameProcessor {
      * @param yPlaneData Y-plane ByteArray
      * @param width 이미지 폭
      * @param height 이미지 높이
+     * @param sampleRate 샘플링 비율 (1 = 모든 픽셀, 4 = 4픽셀마다)
      * @param roiLeft ROI 좌측 시작점
      * @param roiTop ROI 상단 시작점
      * @param roiWidth ROI 폭
@@ -380,6 +383,7 @@ object FrameProcessor {
         yPlaneData: ByteArray,
         width: Int,
         height: Int,
+        sampleRate: Int,
         roiLeft: Int,
         roiTop: Int,
         roiWidth: Int,
@@ -844,6 +848,7 @@ object FrameProcessor {
      * @param yPlaneData Y-plane ByteArray
      * @param width 이미지 폭
      * @param height 이미지 높이
+     * @param sampleRate 샘플링 비율 (1 = 모든 픽셀, 4 = 4픽셀마다)
      * @param roi ROI 영역 (null이면 전체 영역)
      * @return 256-bin histogram (index 0-255, value = pixel count)
      */
@@ -851,22 +856,23 @@ object FrameProcessor {
         yPlaneData: ByteArray,
         width: Int,
         height: Int,
+        sampleRate: Int = 1,
         roi: ROI? = null
     ): IntArray {
         return try {
             if (!nativeLibraryLoaded) {
                 // Fallback: Kotlin implementation
-                return calculateHistogramKotlin(yPlaneData)
+                return calculateHistogramKotlin(yPlaneData, sampleRate)
             }
 
             if (roi != null && roi != ROI.FULL) {
                 val rect = roi.toRect(width, height)
                 calculateHistogramNativeROI(
-                    yPlaneData, width, height,
+                    yPlaneData, width, height, sampleRate,
                     rect.left, rect.top, rect.width(), rect.height()
                 )
             } else {
-                calculateHistogramNative(yPlaneData, width, height)
+                calculateHistogramNative(yPlaneData, width, height, sampleRate)
             }
         } catch (e: Exception) {
             Logger.e("FrameProcessor", "Failed to calculate histogram", e)
@@ -877,10 +883,10 @@ object FrameProcessor {
     /**
      * Kotlin fallback histogram implementation
      */
-    private fun calculateHistogramKotlin(yPlaneData: ByteArray): IntArray {
+    private fun calculateHistogramKotlin(yPlaneData: ByteArray, sampleRate: Int = 1): IntArray {
         val histogram = IntArray(256) { 0 }
-        for (byte in yPlaneData) {
-            val pixelValue = byte.toInt() and 0xFF
+        for (i in yPlaneData.indices step sampleRate) {
+            val pixelValue = yPlaneData[i].toInt() and 0xFF
             histogram[pixelValue]++
         }
         return histogram
@@ -974,13 +980,14 @@ object FrameProcessor {
      *
      * Combines histogram calculation and quality analysis
      *
+     * @param sampleRate 샘플링 비율 (1 = 모든 픽셀, 4 = 4픽셀마다)
      * @param roi ROI region (null for full frame)
      * @return Complete luminance analysis result
      */
-    fun ImageProxy.analyzeLuminance(roi: ROI? = null): LuminanceAnalysis {
+    fun ImageProxy.analyzeLuminance(sampleRate: Int = 1, roi: ROI? = null): LuminanceAnalysis {
         val startTime = System.nanoTime()
 
-        val histogram = this.calculateHistogram(roi)
+        val histogram = this.calculateHistogram(sampleRate, roi)
         val processingTime = (System.nanoTime() - startTime) / 1_000_000.0
 
         return FrameProcessor.analyzeLuminanceQuality(histogram, processingTime)
@@ -1028,8 +1035,8 @@ data class ExposureInfo(
  *
  * Convenience function for histogram analysis
  */
-fun ImageProxy.calculateHistogram(roi: ROI? = null): IntArray {
+fun ImageProxy.calculateHistogram(sampleRate: Int = 1, roi: ROI? = null): IntArray {
     val yPlaneData = this.toYPlaneByteArray()
         ?: return IntArray(256) { 0 }  // Return empty histogram if extraction fails
-    return FrameProcessor.calculateHistogramDirect(yPlaneData, width, height, roi)
+    return FrameProcessor.calculateHistogramDirect(yPlaneData, width, height, sampleRate, roi)
 }

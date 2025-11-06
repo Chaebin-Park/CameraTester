@@ -163,6 +163,7 @@ class CameraManager(
                             yPlaneData = yPlaneBytes,
                             width = imageProxy.width,
                             height = imageProxy.height,
+                            sampleRate = analysisConfig.sampleRate,
                             roi = analysisConfig.roi
                         )
                         val result = FrameProcessor.analyzeLuminanceQuality(histogram)

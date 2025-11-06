@@ -315,6 +315,7 @@ Java_com_kii_camera_FrameProcessor_calculateBrightnessNativeROI(
  * @param yPlaneData Y-plane 픽셀 데이터 (ByteArray)
  * @param width 이미지 폭
  * @param height 이미지 높이
+ * @param sampleRate 샘플링 비율 (1 = 모든 픽셀, 4 = 4픽셀마다)
  * @return 256-bin 히스토그램 (IntArray)
  */
 extern "C" JNIEXPORT jintArray JNICALL
@@ -323,9 +324,10 @@ Java_com_kii_camera_FrameProcessor_calculateHistogramNative(
     jclass clazz,
     jbyteArray yPlaneData,
     jint width,
-    jint height
+    jint height,
+    jint sampleRate
 ) {
-    if (yPlaneData == nullptr || width <= 0 || height <= 0) {
+    if (yPlaneData == nullptr || width <= 0 || height <= 0 || sampleRate < 1) {
         LOGE("Invalid parameters for histogram");
         return nullptr;
     }
@@ -343,8 +345,8 @@ Java_com_kii_camera_FrameProcessor_calculateHistogramNative(
     // 256-bin 히스토그램 초기화
     int histogram[256] = {0};
 
-    // 모든 픽셀을 순회하며 히스토그램 생성
-    for (int i = 0; i < totalPixels; i++) {
+    // 샘플링 적용하여 히스토그램 생성
+    for (int i = 0; i < totalPixels; i += sampleRate) {
         const uint8_t pixelValue = unsignedPixels[i];
         histogram[pixelValue]++;
     }
@@ -372,6 +374,7 @@ Java_com_kii_camera_FrameProcessor_calculateHistogramNative(
  * @param yPlaneData Y-plane 픽셀 데이터
  * @param width 이미지 폭
  * @param height 이미지 높이
+ * @param sampleRate 샘플링 비율 (1 = 모든 픽셀, 4 = 4픽셀마다)
  * @param roiLeft ROI 좌측 시작점
  * @param roiTop ROI 상단 시작점
  * @param roiWidth ROI 폭
@@ -385,12 +388,13 @@ Java_com_kii_camera_FrameProcessor_calculateHistogramNativeROI(
     jbyteArray yPlaneData,
     jint width,
     jint height,
+    jint sampleRate,
     jint roiLeft,
     jint roiTop,
     jint roiWidth,
     jint roiHeight
 ) {
-    if (yPlaneData == nullptr || width <= 0 || height <= 0) {
+    if (yPlaneData == nullptr || width <= 0 || height <= 0 || sampleRate < 1) {
         LOGE("Invalid parameters for histogram ROI");
         return nullptr;
     }
@@ -414,12 +418,12 @@ Java_com_kii_camera_FrameProcessor_calculateHistogramNativeROI(
     // 256-bin 히스토그램 초기화
     int histogram[256] = {0};
 
-    // ROI 영역만 처리
+    // ROI 영역을 샘플링하여 처리
     const int roiRight = roiLeft + roiWidth;
     const int roiBottom = roiTop + roiHeight;
 
-    for (int i = roiTop; i < roiBottom; i++) {
-        for (int j = roiLeft; j < roiRight; j++) {
+    for (int i = roiTop; i < roiBottom; i += sampleRate) {
+        for (int j = roiLeft; j < roiRight; j += sampleRate) {
             const int idx = i * width + j;
             const uint8_t pixelValue = unsignedPixels[idx];
             histogram[pixelValue]++;
