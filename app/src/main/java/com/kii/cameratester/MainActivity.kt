@@ -60,11 +60,9 @@ import com.kii.camera.CapturedImageInfo
 import com.kii.camera.FrameAnalysisConfig
 import com.kii.camera.FrameAnalysisResult
 import com.kii.camera.FrameProcessor
-import com.kii.camera.ROI
 import com.kii.camera.SimpleCameraPreview
 import com.kii.camera.mapToBitmap
 import com.kii.camera.mapToYuvBitmap
-import com.kii.camera.toYPlaneByteArray
 import com.kii.cameratester.ui.theme.CameraTesterTheme
 import com.kii.common.Logger
 import com.kii.common.PermissionHelper
@@ -580,17 +578,23 @@ fun FrameAnalysisExample() {
     // frameAnalysisFlow로부터 자동 분석 결과 수신 (Unit key로 한 번만 실행)
     LaunchedEffect(Unit) {
         Logger.d("FrameAnalysisExample", "Starting frame analysis collection")
-        cameraManager.frameAnalysisFlow.collect { result ->
-            sharpness = result.sharpness
-            brightness = result.brightness
-            luminanceAnalysis = result.luminanceAnalysis
-            sharpnessLevel = result.getSharpnessLevel()
-            brightnessLevel = result.getBrightnessLevel()
-            processingTime = result.processingTimeMs
-            sharpnessTime = result.sharpnessTimeMs
-            brightnessTime = result.brightnessTimeMs
-            luminanceTime = result.luminanceTimeMs
-            frameSize = "${result.width}x${result.height}"
+        // 백그라운드 스레드에서 collect (Main 스레드 블로킹 방지)
+        launch(Dispatchers.Default) {
+            cameraManager.frameAnalysisFlow.collect { result ->
+                // 상태 업데이트는 Main 스레드에서
+                withContext(Dispatchers.Main) {
+                    sharpness = result.sharpness
+                    brightness = result.brightness
+                    luminanceAnalysis = result.luminanceAnalysis
+                    sharpnessLevel = result.getSharpnessLevel()
+                    brightnessLevel = result.getBrightnessLevel()
+                    processingTime = result.processingTimeMs
+                    sharpnessTime = result.sharpnessTimeMs
+                    brightnessTime = result.brightnessTimeMs
+                    luminanceTime = result.luminanceTimeMs
+                    frameSize = "${result.width}x${result.height}"
+                }
+            }
         }
     }
 
