@@ -591,9 +591,6 @@ fun FrameAnalysisExample() {
             brightnessTime = result.brightnessTimeMs
             luminanceTime = result.luminanceTimeMs
             frameSize = "${result.width}x${result.height}"
-
-            // ImageProxy는 자동으로 관리되므로 별도 close 불필요
-            result.imageProxy.close()
         }
     }
 

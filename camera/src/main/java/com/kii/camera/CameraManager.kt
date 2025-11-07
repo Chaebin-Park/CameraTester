@@ -73,6 +73,8 @@ class CameraManager(
     val frameFlow: SharedFlow<ImageProxy> = _frameFlow.asSharedFlow()
 
     // 프레임 분석 스트림 (자동으로 분석된 프레임 결과 제공)
+    // 주의: 무거운 작업(얼굴 인식 등)을 수행하므로 반드시 백그라운드 스레드에서 collect하세요
+    // 예: launch(Dispatchers.Default) { frameAnalysisFlow.collect { ... } }
     private val _frameAnalysisFlow = MutableSharedFlow<FrameAnalysisResult>(
         replay = 0,
         extraBufferCapacity = 2,
@@ -198,9 +200,19 @@ class CameraManager(
                             }ms], total=${"%.2f".format(processingTimeMs)}ms"
                         )
 
+                        // Bitmap 변환 (항상 수행)
+                        val bitmap = try {
+                            imageProxy.toBitmap()
+                        } catch (e: Exception) {
+                            Logger.e("CameraManager", "Failed to convert ImageProxy to Bitmap", e)
+                            imageProxy.close()
+                            return@collect
+                        }
+
                         // 결과 객체 생성 (분석 데이터 포함)
                         result = FrameAnalysisResult(
-                            imageProxy = imageProxy,
+                            bitmap = bitmap,
+                            rotationDegrees = imageProxy.imageInfo.rotationDegrees,
                             sharpness = sharpness,
                             brightness = brightness,
                             luminanceAnalysis = luminanceAnalysis,
@@ -214,15 +226,25 @@ class CameraManager(
 
                     } else {
                         // --- 3-B. 분석 비활성화 (기존 else 블록 로직) ---
-                        // 샘플링은 통과했으므로, ImageProxy만 담아서 전달
+                        // 샘플링은 통과했으므로, 프레임 정보만 전달
                         Logger.e(
                             tag = "TEST_NO_ANALYSIS",
-                            "No analysis enabled, passing frame proxy. (Sampled)"
+                            "No analysis enabled, passing frame info. (Sampled)"
                         )
 
-                        // 결과 객체 생성 (ImageProxy만 포함)
+                        // Bitmap 변환 (항상 수행)
+                        val bitmap = try {
+                            imageProxy.toBitmap()
+                        } catch (e: Exception) {
+                            Logger.e("CameraManager", "Failed to convert ImageProxy to Bitmap", e)
+                            imageProxy.close()
+                            return@collect
+                        }
+
+                        // 결과 객체 생성 (프레임 정보만 포함)
                         result = FrameAnalysisResult(
-                            imageProxy = imageProxy,
+                            bitmap = bitmap,
+                            rotationDegrees = imageProxy.imageInfo.rotationDegrees,
                             width = imageProxy.width,
                             height = imageProxy.height
                         )
@@ -235,13 +257,14 @@ class CameraManager(
                             "CameraManager",
                             "Failed to emit frame analysis result, buffer full"
                         )
-                        imageProxy.close() // 발행 실패 시 닫아주어야 함
                     }
-                    // Note: imageProxy는 consumer(구독자)가 close해야 함
+
+                    // ImageProxy는 라이브러리에서 자동 close (메모리 누수 방지)
+                    imageProxy.close()
 
                 } catch (e: Exception) {
                     Logger.e("CameraManager", "Failed to analyze frame", e)
-                    imageProxy.close() // 예외 발생 시 무조건 닫음
+                    imageProxy.close()
                 }
             }
         }
@@ -298,27 +321,25 @@ class CameraManager(
                 }
             useCases.add(preview!!)
 
-            // Image Analysis (Frame Flow)
-            if (config.enableImageAnalysis) {
-                imageAnalysis = ImageAnalysis.Builder()
-                    .apply {
-                        config.preset.targetResolution?.let { setTargetResolution(it) }
-                            ?: setTargetAspectRatio(config.preset.targetAspectRatio)
-                        setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    }
-                    .build()
-                    .also { analysis ->
-                        analysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                            // Frame을 Flow로 emit
-                            val emitted = _frameFlow.tryEmit(imageProxy)
-                            if (!emitted) {
-                                // Buffer가 가득 차서 emit 실패 시 close
-                                imageProxy.close()
-                            }
+            // Image Analysis (Frame Flow) - 항상 활성화
+            imageAnalysis = ImageAnalysis.Builder()
+                .apply {
+                    config.preset.targetResolution?.let { setTargetResolution(it) }
+                        ?: setTargetAspectRatio(config.preset.targetAspectRatio)
+                    setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                }
+                .build()
+                .also { analysis ->
+                    analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                        // Frame을 Flow로 emit
+                        val emitted = _frameFlow.tryEmit(imageProxy)
+                        if (!emitted) {
+                            // Buffer가 가득 차서 emit 실패 시 close
+                            imageProxy.close()
                         }
                     }
-                useCases.add(imageAnalysis!!)
-            }
+                }
+            useCases.add(imageAnalysis!!)
 
             // Image Capture
             if (config.enableImageCapture) {

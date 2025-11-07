@@ -12,7 +12,6 @@ import androidx.camera.core.ImageProxy
 data class CameraConfig(
     val preset: CameraPreset = CameraPreset.LOW,
     val lensFacing: Int = CameraSelector.LENS_FACING_BACK,
-    val enableImageAnalysis: Boolean = true,
     val enableImageCapture: Boolean = true,
     val enableVideoCapture: Boolean = false,
     val flashMode: FlashMode = FlashMode.OFF,
@@ -81,7 +80,6 @@ data class CameraConfig(
     class Builder {
         var preset: CameraPreset = CameraPreset.MEDIUM
         var lensFacing: Int = CameraSelector.LENS_FACING_BACK
-        var enableImageAnalysis: Boolean = true
         var enableImageCapture: Boolean = true
         var enableVideoCapture: Boolean = false
         var flashMode: FlashMode = FlashMode.OFF
@@ -91,7 +89,6 @@ data class CameraConfig(
         fun build() = CameraConfig(
             preset = preset,
             lensFacing = lensFacing,
-            enableImageAnalysis = enableImageAnalysis,
             enableImageCapture = enableImageCapture,
             enableVideoCapture = enableVideoCapture,
             flashMode = flashMode,
@@ -219,6 +216,8 @@ data class FrameAnalysisConfig(
     /**
      * 하나 이상의 분석 옵션이 활성화되어 있는지 확인
      */
+    fun hasAnyEnabled(): Boolean = enableSharpness || enableBrightness || enableLuminance
+
     companion object {
         /**
          * 기본 분석 설정 (선명도만, 10프레임당 1회)
@@ -266,9 +265,13 @@ data class FrameAnalysisConfig(
 
 /**
  * 프레임 분석 결과
+ *
+ * 라이브러리가 자동으로 Bitmap 변환 및 메모리 관리를 처리합니다.
+ * ImageProxy는 내부에서 자동으로 close되므로 사용자는 신경 쓸 필요가 없습니다.
  */
 data class FrameAnalysisResult(
-    val imageProxy: ImageProxy,
+    val bitmap: android.graphics.Bitmap,  // 항상 제공됨
+    val rotationDegrees: Int,  // 0, 90, 180, 270
     val sharpness: Double? = null,
     val brightness: Double? = null,
     val luminanceAnalysis: LuminanceAnalysis? = null,
@@ -306,39 +309,6 @@ data class FrameAnalysisResult(
             brightness < 0.8 -> BrightnessLevel.BRIGHT
             else -> BrightnessLevel.VERY_BRIGHT
         }
-    }
-
-    /**
-     * ImageProxy를 자동으로 close하면서 블록 실행
-     *
-     * @param block ImageProxy를 사용하는 블록
-     * @return 블록의 반환값
-     */
-    inline fun <R> use(block: (FrameAnalysisResult) -> R): R {
-        return try {
-            block(this)
-        } finally {
-            imageProxy.close()
-        }
-    }
-
-    /**
-     * ImageProxy를 Bitmap으로 변환
-     *
-     * @return 변환된 Bitmap (caller가 recycle 책임)
-     */
-    @androidx.camera.core.ExperimentalGetImage
-    fun toBitmap(): android.graphics.Bitmap {
-        return imageProxy.toBitmap()
-    }
-
-    /**
-     * 회전 각도 반환
-     *
-     * @return 이미지 회전 각도 (0, 90, 180, 270)
-     */
-    fun getRotationDegrees(): Int {
-        return imageProxy.imageInfo.rotationDegrees
     }
 
     override fun toString(): String {
