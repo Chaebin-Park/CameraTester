@@ -106,110 +106,146 @@ class CameraManager(
         frameAnalysisJob = analysisScope.launch {
             frameFlow.collect { imageProxy ->
                 try {
-                    // 프레임 샘플링: frameSamplingRate에 따라 일부 프레임만 처리
+                    // --- 1. 프레임 샘플링 (공통 로직) ---
                     val currentCount = frameCounter.incrementAndGet()
                     if (currentCount % analysisConfig.frameSamplingRate != 0) {
-                        // 샘플링에서 제외된 프레임은 즉시 close (중요!)
+                        // 샘플링에서 제외된 프레임은 즉시 close
                         imageProxy.close()
                         return@collect
                     }
 
-                    // 분석 옵션이 모두 비활성화된 경우 early return
-                    if (!analysisConfig.hasAnyEnabled()) {
-                        imageProxy.close()
-                        return@collect
+                    // --- 2. 분석 활성화 여부 확인 ---
+                    val analysisEnabled = analysisConfig.enableLuminance ||
+                            analysisConfig.enableSharpness ||
+                            analysisConfig.enableBrightness
+
+                    val result: FrameAnalysisResult
+
+                    if (analysisEnabled) {
+                        // --- 3-A. 분석 실행 (기존 if 블록 로직) ---
+                        Logger.e(
+                            tag = "TEST_FRAME_ANALYSIS",
+                            "Frame analysis started with config: $analysisConfig"
+                        )
+
+                        val startTime = System.nanoTime()
+                        val yPlaneBytes = imageProxy.toYPlaneByteArray()
+
+                        if (yPlaneBytes == null) {
+                            Logger.w("CameraManager", "Failed to extract Y plane")
+                            imageProxy.close()
+                            return@collect
+                        }
+
+                        // 선명도 계산
+                        var sharpnessTimeMs = 0.0
+                        val sharpness = if (analysisConfig.enableSharpness) {
+                            val sharpnessStartTime = System.nanoTime()
+                            val res = FrameProcessor.calculateSharpnessDirect(
+                                pixelData = yPlaneBytes,
+                                width = imageProxy.width,
+                                height = imageProxy.height,
+                                sampleRate = analysisConfig.sampleRate,
+                                roi = analysisConfig.roi
+                            )
+                            sharpnessTimeMs = (System.nanoTime() - sharpnessStartTime) / 1_000_000.0
+                            res
+                        } else null
+
+                        // 밝기 계산
+                        var brightnessTimeMs = 0.0
+                        val brightness = if (analysisConfig.enableBrightness) {
+                            val brightnessStartTime = System.nanoTime()
+                            val res = FrameProcessor.calculateBrightnessDirect(
+                                pixelData = yPlaneBytes,
+                                width = imageProxy.width,
+                                height = imageProxy.height,
+                                sampleRate = analysisConfig.sampleRate,
+                                roi = analysisConfig.roi
+                            )
+                            brightnessTimeMs =
+                                (System.nanoTime() - brightnessStartTime) / 1_000_000.0
+                            res
+                        } else null
+
+                        // 조명 품질 분석
+                        var luminanceTimeMs = 0.0
+                        val luminanceAnalysis = if (analysisConfig.enableLuminance) {
+                            val luminanceStartTime = System.nanoTime()
+                            val histogram = FrameProcessor.calculateHistogramDirect(
+                                yPlaneData = yPlaneBytes,
+                                width = imageProxy.width,
+                                height = imageProxy.height,
+                                sampleRate = analysisConfig.sampleRate,
+                                roi = analysisConfig.roi
+                            )
+                            val res = FrameProcessor.analyzeLuminanceQuality(histogram)
+                            luminanceTimeMs = (System.nanoTime() - luminanceStartTime) / 1_000_000.0
+                            res.copy(processingTimeMs = luminanceTimeMs)
+                        } else null
+
+                        val endTime = System.nanoTime()
+                        val processingTimeMs = (endTime - startTime) / 1_000_000.0
+
+                        Logger.d(
+                            "CameraManager",
+                            "Frame analyzed: sharpness=$sharpness [${"%.2f".format(sharpnessTimeMs)}ms], brightness=$brightness [${
+                                "%.2f".format(brightnessTimeMs)
+                            }ms], lighting=${luminanceAnalysis?.quality} [${
+                                "%.2f".format(
+                                    luminanceTimeMs
+                                )
+                            }ms], total=${"%.2f".format(processingTimeMs)}ms"
+                        )
+
+                        // 결과 객체 생성 (분석 데이터 포함)
+                        result = FrameAnalysisResult(
+                            imageProxy = imageProxy,
+                            sharpness = sharpness,
+                            brightness = brightness,
+                            luminanceAnalysis = luminanceAnalysis,
+                            processingTimeMs = processingTimeMs,
+                            sharpnessTimeMs = sharpnessTimeMs,
+                            brightnessTimeMs = brightnessTimeMs,
+                            luminanceTimeMs = luminanceTimeMs,
+                            width = imageProxy.width,
+                            height = imageProxy.height
+                        )
+
+                    } else {
+                        // --- 3-B. 분석 비활성화 (기존 else 블록 로직) ---
+                        // 샘플링은 통과했으므로, ImageProxy만 담아서 전달
+                        Logger.e(
+                            tag = "TEST_NO_ANALYSIS",
+                            "No analysis enabled, passing frame proxy. (Sampled)"
+                        )
+
+                        // 결과 객체 생성 (ImageProxy만 포함)
+                        result = FrameAnalysisResult(
+                            imageProxy = imageProxy,
+                            width = imageProxy.width,
+                            height = imageProxy.height
+                        )
                     }
 
-                    val startTime = System.nanoTime()
-
-                    // Y plane 추출 (가장 빠른 방법)
-                    val yPlaneBytes = imageProxy.toYPlaneByteArray()
-
-                    if (yPlaneBytes == null) {
-                        Logger.w("CameraManager", "Failed to extract Y plane")
-                        imageProxy.close()
-                        return@collect
-                    }
-
-                    // 선명도 계산
-                    var sharpnessTimeMs = 0.0
-                    val sharpnessStartTime = System.nanoTime()
-                    val sharpness = if (analysisConfig.enableSharpness) {
-                        val result = FrameProcessor.calculateSharpnessDirect(
-                            pixelData = yPlaneBytes,
-                            width = imageProxy.width,
-                            height = imageProxy.height,
-                            sampleRate = analysisConfig.sampleRate,
-                            roi = analysisConfig.roi
-                        )
-                        sharpnessTimeMs = (System.nanoTime() - sharpnessStartTime) / 1_000_000.0
-                        result
-                    } else null
-
-                    // 밝기 계산 (최적화됨: 샘플링 + ROI)
-                    var brightnessTimeMs = 0.0
-                    val brightnessStartTime = System.nanoTime()
-                    val brightness = if (analysisConfig.enableBrightness) {
-                        val result = FrameProcessor.calculateBrightnessDirect(
-                            pixelData = yPlaneBytes,
-                            width = imageProxy.width,
-                            height = imageProxy.height,
-                            sampleRate = analysisConfig.sampleRate,
-                            roi = analysisConfig.roi
-                        )
-                        brightnessTimeMs = (System.nanoTime() - brightnessStartTime) / 1_000_000.0
-                        result
-                    } else null
-
-                    // 조명 품질 분석 (히스토그램 기반)
-                    var luminanceTimeMs = 0.0
-                    val luminanceStartTime = System.nanoTime()
-                    val luminanceAnalysis = if (analysisConfig.enableLuminance) {
-                        val histogram = FrameProcessor.calculateHistogramDirect(
-                            yPlaneData = yPlaneBytes,
-                            width = imageProxy.width,
-                            height = imageProxy.height,
-                            sampleRate = analysisConfig.sampleRate,
-                            roi = analysisConfig.roi
-                        )
-                        val result = FrameProcessor.analyzeLuminanceQuality(histogram)
-                        luminanceTimeMs = (System.nanoTime() - luminanceStartTime) / 1_000_000.0
-                        result.copy(processingTimeMs = luminanceTimeMs)
-                    } else null
-
-                    val endTime = System.nanoTime()
-                    val processingTimeMs = (endTime - startTime) / 1_000_000.0
-
-                    Logger.d("CameraManager", "Frame analyzed: sharpness=$sharpness [${"%.2f".format(sharpnessTimeMs)}ms], brightness=$brightness [${"%.2f".format(brightnessTimeMs)}ms], lighting=${luminanceAnalysis?.quality} [${"%.2f".format(luminanceTimeMs)}ms], total=${"%.2f".format(processingTimeMs)}ms")
-
-                    // 결과 emit
-                    val result = FrameAnalysisResult(
-                        imageProxy = imageProxy,
-                        sharpness = sharpness,
-                        brightness = brightness,
-                        luminanceAnalysis = luminanceAnalysis,
-                        processingTimeMs = processingTimeMs,
-                        sharpnessTimeMs = sharpnessTimeMs,
-                        brightnessTimeMs = brightnessTimeMs,
-                        luminanceTimeMs = luminanceTimeMs,
-                        width = imageProxy.width,
-                        height = imageProxy.height
-                    )
-
+                    // --- 4. 결과 발행 (공통 로직) ---
                     val emitted = _frameAnalysisFlow.tryEmit(result)
                     if (!emitted) {
-                        Logger.w("CameraManager", "Failed to emit frame analysis result, buffer full")
-                        imageProxy.close()
+                        Logger.w(
+                            "CameraManager",
+                            "Failed to emit frame analysis result, buffer full"
+                        )
+                        imageProxy.close() // 발행 실패 시 닫아주어야 함
                     }
-                    // Note: imageProxy는 consumer(FrameAnalysisExample)가 close해야 함
+                    // Note: imageProxy는 consumer(구독자)가 close해야 함
+
                 } catch (e: Exception) {
                     Logger.e("CameraManager", "Failed to analyze frame", e)
-                    imageProxy.close()
+                    imageProxy.close() // 예외 발생 시 무조건 닫음
                 }
             }
         }
     }
-
     /**
      * 프레임 분석 중지
      */
@@ -458,7 +494,8 @@ class CameraManager(
         return suspendCancellableCoroutine { continuation ->
             try {
                 if (imageCapture == null) {
-                    val error = IllegalStateException("ImageCapture is not enabled. Set enableImageCapture=true in config")
+                    val error =
+                        IllegalStateException("ImageCapture is not enabled. Set enableImageCapture=true in config")
                     Logger.e("CameraManager", "Failed to capture photo", error)
                     continuation.resumeWith(Result.failure(error))
                     return@suspendCancellableCoroutine

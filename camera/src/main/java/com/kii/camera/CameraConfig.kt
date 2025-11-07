@@ -219,7 +219,6 @@ data class FrameAnalysisConfig(
     /**
      * 하나 이상의 분석 옵션이 활성화되어 있는지 확인
      */
-    fun hasAnyEnabled(): Boolean = enableSharpness || enableBrightness || enableLuminance
     companion object {
         /**
          * 기본 분석 설정 (선명도만, 10프레임당 1회)
@@ -307,6 +306,39 @@ data class FrameAnalysisResult(
             brightness < 0.8 -> BrightnessLevel.BRIGHT
             else -> BrightnessLevel.VERY_BRIGHT
         }
+    }
+
+    /**
+     * ImageProxy를 자동으로 close하면서 블록 실행
+     *
+     * @param block ImageProxy를 사용하는 블록
+     * @return 블록의 반환값
+     */
+    inline fun <R> use(block: (FrameAnalysisResult) -> R): R {
+        return try {
+            block(this)
+        } finally {
+            imageProxy.close()
+        }
+    }
+
+    /**
+     * ImageProxy를 Bitmap으로 변환
+     *
+     * @return 변환된 Bitmap (caller가 recycle 책임)
+     */
+    @androidx.camera.core.ExperimentalGetImage
+    fun toBitmap(): android.graphics.Bitmap {
+        return imageProxy.toBitmap()
+    }
+
+    /**
+     * 회전 각도 반환
+     *
+     * @return 이미지 회전 각도 (0, 90, 180, 270)
+     */
+    fun getRotationDegrees(): Int {
+        return imageProxy.imageInfo.rotationDegrees
     }
 
     override fun toString(): String {
