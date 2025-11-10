@@ -2,6 +2,10 @@ package com.kii.camera
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager as Camera2Manager
+import android.hardware.camera2.params.StreamConfigurationMap
+import android.util.Size
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -282,6 +286,83 @@ class CameraManager(
     }
 
     /**
+     * 디바이스가 지원하는 해상도 목록 로깅
+     */
+    private fun logSupportedResolutions(cameraSelector: CameraSelector) {
+        try {
+            val camera2Manager = context.getSystemService(Context.CAMERA_SERVICE) as Camera2Manager
+            val cameraId = getCameraIdFromSelector(cameraSelector, camera2Manager)
+
+            if (cameraId != null) {
+                val characteristics = camera2Manager.getCameraCharacteristics(cameraId)
+                val configMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+
+                if (configMap != null) {
+                    val outputSizes = configMap.getOutputSizes(android.graphics.ImageFormat.YUV_420_888)
+
+                    if (outputSizes != null && outputSizes.isNotEmpty()) {
+                        Logger.d("CameraManager", "===== Supported Resolutions =====")
+                        Logger.d("CameraManager", "Total: ${outputSizes.size} resolutions available")
+                        Logger.d("CameraManager", "Requested: ${config.preset.targetResolution}")
+
+                        // 해상도를 넓이 기준으로 정렬 (큰 것부터)
+                        val sortedSizes = outputSizes.sortedByDescending { it.width * it.height }
+
+                        sortedSizes.forEachIndexed { index, size ->
+                            val megapixels = (size.width * size.height) / 1_000_000.0
+                            val aspectRatio = size.width.toFloat() / size.height.toFloat()
+                            Logger.d(
+                                "CameraManager",
+                                "  ${index + 1}. ${size.width}x${size.height} " +
+                                "(${String.format("%.1f", megapixels)}MP, " +
+                                "ratio: ${String.format("%.2f", aspectRatio)})"
+                            )
+                        }
+                        Logger.d("CameraManager", "================================")
+                    } else {
+                        Logger.w("CameraManager", "No supported resolutions found")
+                    }
+                } else {
+                    Logger.w("CameraManager", "StreamConfigurationMap is null")
+                }
+            } else {
+                Logger.w("CameraManager", "Failed to get camera ID from selector")
+            }
+        } catch (e: Exception) {
+            Logger.e("CameraManager", "Failed to log supported resolutions", e)
+        }
+    }
+
+    /**
+     * CameraSelector로부터 Camera ID 가져오기
+     */
+    private fun getCameraIdFromSelector(selector: CameraSelector, camera2Manager: Camera2Manager): String? {
+        return try {
+            val lensFacing = config.lensFacing
+            val cameraIds = camera2Manager.cameraIdList
+
+            for (id in cameraIds) {
+                val characteristics = camera2Manager.getCameraCharacteristics(id)
+                val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+
+                val camera2Facing = when (lensFacing) {
+                    CameraSelector.LENS_FACING_BACK -> CameraCharacteristics.LENS_FACING_BACK
+                    CameraSelector.LENS_FACING_FRONT -> CameraCharacteristics.LENS_FACING_FRONT
+                    else -> CameraCharacteristics.LENS_FACING_BACK
+                }
+
+                if (facing == camera2Facing) {
+                    return id
+                }
+            }
+            null
+        } catch (e: Exception) {
+            Logger.e("CameraManager", "Failed to get camera ID", e)
+            null
+        }
+    }
+
+    /**
      * 카메라 시작
      */
     suspend fun startCamera() {
@@ -312,8 +393,17 @@ class CameraManager(
             // Preview 설정
             preview = Preview.Builder()
                 .apply {
-                    config.preset.targetResolution?.let { setTargetResolution(it) }
-                        ?: setTargetAspectRatio(config.preset.targetAspectRatio)
+                    config.preset.targetResolution?.let { resolution ->
+                        val resolutionSelector = ResolutionSelector.Builder()
+                            .setResolutionStrategy(
+                                ResolutionStrategy(
+                                    resolution,
+                                    ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
+                                )
+                            )
+                            .build()
+                        setResolutionSelector(resolutionSelector)
+                    }
                 }
                 .build()
                 .also { preview ->
@@ -324,13 +414,31 @@ class CameraManager(
             // Image Analysis (Frame Flow) - 항상 활성화
             imageAnalysis = ImageAnalysis.Builder()
                 .apply {
-                    config.preset.targetResolution?.let { setTargetResolution(it) }
-                        ?: setTargetAspectRatio(config.preset.targetAspectRatio)
+                    config.preset.targetResolution?.let { resolution ->
+                        val resolutionSelector = ResolutionSelector.Builder()
+                            .setResolutionStrategy(
+                                ResolutionStrategy(
+                                    resolution,
+                                    ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
+                                )
+                            )
+                            .build()
+                        setResolutionSelector(resolutionSelector)
+                    }
                     setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 }
                 .build()
                 .also { analysis ->
                     analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                        // 실제 해상도 로깅 (첫 프레임에만)
+                        if (_frameFlow.subscriptionCount.value > 0 && frameCounter.get() == 0) {
+                            Logger.d(
+                                "CameraManager",
+                                "ImageAnalysis actual resolution: ${imageProxy.width}x${imageProxy.height} " +
+                                "(requested: ${config.preset.targetResolution})"
+                            )
+                        }
+
                         // Frame을 Flow로 emit
                         val emitted = _frameFlow.tryEmit(imageProxy)
                         if (!emitted) {
@@ -384,6 +492,9 @@ class CameraManager(
             _cameraState.value = CameraState.Running
             _cameraEvent.emit(CameraEvent.CameraStarted)
             Logger.d("CameraManager", "Camera started successfully")
+
+            // 디바이스가 지원하는 해상도 목록 로깅
+            logSupportedResolutions(cameraSelector)
 
             // SurfaceProvider 재연결 (카메라 전환 시 필요)
             surfaceProvider?.let { provider ->
