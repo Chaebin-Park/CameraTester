@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,6 +61,7 @@ import com.kii.camera.CapturedImageInfo
 import com.kii.camera.FrameAnalysisConfig
 import com.kii.camera.FrameAnalysisResult
 import com.kii.camera.FrameProcessor
+import com.kii.camera.HistogramChart
 import com.kii.camera.SimpleCameraPreview
 import com.kii.camera.mapToBitmap
 import com.kii.camera.mapToYuvBitmap
@@ -652,7 +654,10 @@ fun FrameAnalysisExample() {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
-                    .align(Alignment.TopCenter)
+                    .align(Alignment.TopCenter),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White.copy(alpha = 0.8f)
+                )
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -815,6 +820,19 @@ fun FrameAnalysisExample() {
                                     )
                                 }
                             }
+
+                            // 히스토그램 표시
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "Histogram",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontSize = 11.sp,
+                                color = Color.Gray
+                            )
+                            HistogramChart(
+                                histogram = analysis.histogram,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
                         }
                     }
 
