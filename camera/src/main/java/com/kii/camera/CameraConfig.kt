@@ -208,6 +208,7 @@ data class FrameAnalysisConfig(
     val enableSharpness: Boolean = true,
     val enableBrightness: Boolean = false,
     val enableLuminance: Boolean = false,
+    val enableSpatialAnalysis: Boolean = false,
     val sampleRate: Int = 4,
     val frameSamplingRate: Int = 10,
     val roi: ROI = ROI.CENTER_50,
@@ -216,7 +217,7 @@ data class FrameAnalysisConfig(
     /**
      * 하나 이상의 분석 옵션이 활성화되어 있는지 확인
      */
-    fun hasAnyEnabled(): Boolean = enableSharpness || enableBrightness || enableLuminance
+    fun hasAnyEnabled(): Boolean = enableSharpness || enableBrightness || enableLuminance || enableSpatialAnalysis
 
     companion object {
         /**
@@ -225,12 +226,13 @@ data class FrameAnalysisConfig(
         val DEFAULT = FrameAnalysisConfig()
 
         /**
-         * 고성능 분석 (선명도+밝기+조명 품질, Native 처리)
+         * 고성능 분석 (선명도+밝기+조명 품질+공간 분석, Native 처리)
          */
         val HIGH_PERFORMANCE = FrameAnalysisConfig(
             enableSharpness = true,
             enableBrightness = true,
             enableLuminance = true,
+            enableSpatialAnalysis = true,
             sampleRate = 4,
             frameSamplingRate = 10,
             roi = ROI.CENTER_50,
@@ -275,10 +277,12 @@ data class FrameAnalysisResult(
     val sharpness: Double? = null,
     val brightness: Double? = null,
     val luminanceAnalysis: LuminanceAnalysis? = null,
+    val spatialAnalysis: SpatialBrightnessAnalysis? = null,
     val processingTimeMs: Double = 0.0,
     val sharpnessTimeMs: Double = 0.0,
     val brightnessTimeMs: Double = 0.0,
     val luminanceTimeMs: Double = 0.0,
+    val spatialAnalysisTimeMs: Double = 0.0,
     val width: Int,
     val height: Int,
     val timestamp: Long = System.currentTimeMillis()

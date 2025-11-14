@@ -570,6 +570,8 @@ fun FrameAnalysisExample() {
     var brightnessTime by remember { mutableStateOf<Double?>(null) }
     var luminanceTime by remember { mutableStateOf<Double?>(null) }
     var frameSize by remember { mutableStateOf<String?>(null) }
+    var spatialAnalysis by remember { mutableStateOf<com.kii.camera.SpatialBrightnessAnalysis?>(null) }
+    var showHeatmap by remember { mutableStateOf(true) }
 
     // CameraManager 시작 (Unit key로 한 번만 실행)
     LaunchedEffect(Unit) {
@@ -588,6 +590,7 @@ fun FrameAnalysisExample() {
                     sharpness = result.sharpness
                     brightness = result.brightness
                     luminanceAnalysis = result.luminanceAnalysis
+                    spatialAnalysis = result.spatialAnalysis
                     sharpnessLevel = result.getSharpnessLevel()
                     brightnessLevel = result.getBrightnessLevel()
                     processingTime = result.processingTimeMs
@@ -614,6 +617,17 @@ fun FrameAnalysisExample() {
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // 히트맵 토글 버튼
+                FloatingActionButton(
+                    onClick = { showHeatmap = !showHeatmap },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Text(
+                        text = if (showHeatmap) "🔥" else "📊",
+                        fontSize = 20.sp
+                    )
+                }
+
                 // 카메라 전환 버튼
                 FloatingActionButton(
                     onClick = {
@@ -648,6 +662,17 @@ fun FrameAnalysisExample() {
                 modifier = Modifier.fillMaxSize(),
                 autoStart = false // 이미 수동으로 시작함
             )
+
+            // 밝기 히트맵 오버레이
+            if (showHeatmap && spatialAnalysis != null) {
+                BrightnessHeatmapOverlay(
+                    analysis = spatialAnalysis,
+                    modifier = Modifier.fillMaxSize(),
+                    showGrid = true,
+                    showClipping = true,
+                    opacity = 0.5f
+                )
+            }
 
             // 분석 결과 표시 (상단)
             Card(
@@ -833,6 +858,43 @@ fun FrameAnalysisExample() {
                                 histogram = analysis.histogram,
                                 modifier = Modifier.padding(top = 4.dp)
                             )
+                        }
+                    }
+
+                    // Spatial Analysis
+                    spatialAnalysis?.let { spatial ->
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                "Spatial Analysis",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontSize = 11.sp,
+                                color = Color.Gray
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    "Uniformity: ${(spatial.brightnessUniformity * 100).toInt()}%",
+                                    fontSize = 11.sp
+                                )
+                                Text(
+                                    "Center: ${(spatial.centerBrightness * 100).toInt()}%",
+                                    fontSize = 11.sp
+                                )
+                                Text(
+                                    "Edge: ${(spatial.edgeBrightness * 100).toInt()}%",
+                                    fontSize = 11.sp
+                                )
+                            }
+                            if (spatial.isBacklit) {
+                                Text(
+                                    "⚠️ Backlit detected",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFFFF9800)
+                                )
+                            }
                         }
                     }
 

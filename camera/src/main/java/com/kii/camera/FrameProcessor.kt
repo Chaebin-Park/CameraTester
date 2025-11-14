@@ -391,6 +391,157 @@ object FrameProcessor {
     ): IntArray
 
     /**
+     * Native 그리드 기반 밝기 분석 (JNI)
+     *
+     * @param yPlaneData Y-plane ByteArray
+     * @param width 이미지 폭
+     * @param height 이미지 높이
+     * @param gridRows 그리드 행 수
+     * @param gridCols 그리드 열 수
+     * @param sampleRate 샘플링 비율
+     * @return DoubleArray[gridRows * gridCols] - 각 셀의 평균 밝기 (0.0 ~ 1.0)
+     */
+    @JvmStatic
+    private external fun calculateGridBrightnessNative(
+        yPlaneData: ByteArray,
+        width: Int,
+        height: Int,
+        gridRows: Int,
+        gridCols: Int,
+        sampleRate: Int
+    ): DoubleArray
+
+    /**
+     * Native 공간별 클리핑 분석 (JNI)
+     *
+     * @param yPlaneData Y-plane ByteArray
+     * @param width 이미지 폭
+     * @param height 이미지 높이
+     * @param gridRows 그리드 행 수
+     * @param gridCols 그리드 열 수
+     * @param sampleRate 샘플링 비율
+     * @return IntArray[2 * gridRows * gridCols] - 각 셀의 [highlight, shadow] 클리핑 픽셀 수
+     */
+    @JvmStatic
+    private external fun calculateSpatialClippingNative(
+        yPlaneData: ByteArray,
+        width: Int,
+        height: Int,
+        gridRows: Int,
+        gridCols: Int,
+        sampleRate: Int
+    ): IntArray
+
+    /**
+     * Native 중앙 vs 가장자리 밝기 비교 (JNI)
+     *
+     * @param yPlaneData Y-plane ByteArray
+     * @param width 이미지 폭
+     * @param height 이미지 높이
+     * @param centerRatio 중앙 영역 비율 (0.0 ~ 1.0)
+     * @param sampleRate 샘플링 비율
+     * @return DoubleArray[2] - [center, edge] 평균 밝기 (0.0 ~ 1.0)
+     */
+    @JvmStatic
+    private external fun calculateCenterEdgeBrightnessNative(
+        yPlaneData: ByteArray,
+        width: Int,
+        height: Int,
+        centerRatio: Double,
+        sampleRate: Int
+    ): DoubleArray
+
+    /**
+     * Native 밝기 통계 계산 (JNI)
+     *
+     * @param yPlaneData Y-plane ByteArray
+     * @param width 이미지 폭
+     * @param height 이미지 높이
+     * @param sampleRate 샘플링 비율
+     * @return DoubleArray[3] - [mean, variance, stddev] (0.0 ~ 1.0 정규화)
+     */
+    @JvmStatic
+    private external fun calculateBrightnessStatisticsNative(
+        yPlaneData: ByteArray,
+        width: Int,
+        height: Int,
+        sampleRate: Int
+    ): DoubleArray
+
+    /**
+     * 공간적 밝기 분석 (Direct)
+     *
+     * Y-plane을 그리드로 나누어 각 영역의 밝기, 클리핑, 균일도 등을 분석
+     * 빛번짐, 역광, 과노출/저노출 영역을 공간적으로 파악 가능
+     *
+     * @param yPlaneData Y-plane ByteArray
+     * @param width 이미지 폭
+     * @param height 이미지 높이
+     * @param gridRows 그리드 행 수 (기본값 3)
+     * @param gridCols 그리드 열 수 (기본값 3)
+     * @param centerRatio 중앙 영역 비율 (기본값 0.5 = 중앙 50%)
+     * @param sampleRate 샘플링 비율 (기본값 4)
+     * @return SpatialBrightnessAnalysis 공간적 밝기 분석 결과
+     */
+    fun calculateSpatialBrightnessDirect(
+        yPlaneData: ByteArray,
+        width: Int,
+        height: Int,
+        gridRows: Int = 3,
+        gridCols: Int = 3,
+        centerRatio: Double = 0.5,
+        sampleRate: Int = 4
+    ): SpatialBrightnessAnalysis? {
+        return try {
+            if (!nativeLibraryLoaded) {
+                Logger.w("FrameProcessor", "Native library not available for spatial brightness analysis")
+                return null
+            }
+
+            // 1. 그리드 밝기 계산
+            val gridBrightness = calculateGridBrightnessNative(
+                yPlaneData, width, height, gridRows, gridCols, sampleRate
+            )
+
+            // 2. 공간별 클리핑 분석
+            val clippingData = calculateSpatialClippingNative(
+                yPlaneData, width, height, gridRows, gridCols, sampleRate
+            )
+
+            // 클리핑 데이터를 highlight와 shadow 배열로 분리
+            val gridSize = gridRows * gridCols
+            val gridHighlightClipping = IntArray(gridSize) { i -> clippingData[i * 2] }
+            val gridShadowClipping = IntArray(gridSize) { i -> clippingData[i * 2 + 1] }
+
+            // 3. 중앙 vs 가장자리 밝기
+            val centerEdgeData = calculateCenterEdgeBrightnessNative(
+                yPlaneData, width, height, centerRatio, sampleRate
+            )
+
+            // 4. 밝기 통계
+            val statisticsData = calculateBrightnessStatisticsNative(
+                yPlaneData, width, height, sampleRate
+            )
+
+            SpatialBrightnessAnalysis(
+                gridRows = gridRows,
+                gridCols = gridCols,
+                gridBrightness = gridBrightness,
+                gridHighlightClipping = gridHighlightClipping,
+                gridShadowClipping = gridShadowClipping,
+                centerBrightness = centerEdgeData[0],
+                edgeBrightness = centerEdgeData[1],
+                mean = statisticsData[0],
+                variance = statisticsData[1],
+                stddev = statisticsData[2]
+            )
+        } catch (e: Exception) {
+            Logger.e("FrameProcessor", "Failed to calculate spatial brightness", e)
+            null
+        }
+    }
+
+    /**
      * 프레임 회전
      */
     fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
@@ -1045,4 +1196,28 @@ fun ImageProxy.calculateHistogram(sampleRate: Int = 1, roi: ROI? = null): IntArr
     val yPlaneData = this.toYPlaneByteArray()
         ?: return IntArray(256) { 0 }  // Return empty histogram if extraction fails
     return FrameProcessor.calculateHistogramDirect(yPlaneData, width, height, sampleRate, roi)
+}
+
+/**
+ * ImageProxy extension: Spatial brightness analysis from Y-plane
+ *
+ * Y-plane을 그리드로 나누어 공간적 밝기 분포를 분석
+ * 빛번짐, 역광, 과노출/저노출 영역을 공간적으로 파악 가능
+ *
+ * @param gridRows 그리드 행 수 (기본값 3)
+ * @param gridCols 그리드 열 수 (기본값 3)
+ * @param centerRatio 중앙 영역 비율 (기본값 0.5)
+ * @param sampleRate 샘플링 비율 (기본값 4)
+ * @return SpatialBrightnessAnalysis 공간적 밝기 분석 결과
+ */
+fun ImageProxy.analyzeSpatialBrightness(
+    gridRows: Int = 3,
+    gridCols: Int = 3,
+    centerRatio: Double = 0.5,
+    sampleRate: Int = 4
+): SpatialBrightnessAnalysis? {
+    val yPlaneData = this.toYPlaneByteArray() ?: return null
+    return FrameProcessor.calculateSpatialBrightnessDirect(
+        yPlaneData, width, height, gridRows, gridCols, centerRatio, sampleRate
+    )
 }

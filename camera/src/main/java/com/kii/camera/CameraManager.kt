@@ -123,7 +123,8 @@ class CameraManager(
                     // --- 2. 분석 활성화 여부 확인 ---
                     val analysisEnabled = analysisConfig.enableLuminance ||
                             analysisConfig.enableSharpness ||
-                            analysisConfig.enableBrightness
+                            analysisConfig.enableBrightness ||
+                            analysisConfig.enableSpatialAnalysis
 
                     val result: FrameAnalysisResult
 
@@ -190,6 +191,23 @@ class CameraManager(
                             res.copy(processingTimeMs = luminanceTimeMs)
                         } else null
 
+                        // 공간적 밝기 분석
+                        var spatialAnalysisTimeMs = 0.0
+                        val spatialAnalysis = if (analysisConfig.enableSpatialAnalysis) {
+                            val spatialStartTime = System.nanoTime()
+                            val res = FrameProcessor.calculateSpatialBrightnessDirect(
+                                yPlaneData = yPlaneBytes,
+                                width = imageProxy.width,
+                                height = imageProxy.height,
+                                gridRows = 3,
+                                gridCols = 3,
+                                centerRatio = 0.5,
+                                sampleRate = analysisConfig.sampleRate
+                            )
+                            spatialAnalysisTimeMs = (System.nanoTime() - spatialStartTime) / 1_000_000.0
+                            res
+                        } else null
+
                         val endTime = System.nanoTime()
                         val processingTimeMs = (endTime - startTime) / 1_000_000.0
 
@@ -201,7 +219,7 @@ class CameraManager(
                                 "%.2f".format(
                                     luminanceTimeMs
                                 )
-                            }ms], total=${"%.2f".format(processingTimeMs)}ms"
+                            }ms], spatial=${if (spatialAnalysis != null) "enabled" else "disabled"} [${"%.2f".format(spatialAnalysisTimeMs)}ms], total=${"%.2f".format(processingTimeMs)}ms"
                         )
 
                         // Bitmap 변환 (항상 수행)
@@ -220,10 +238,12 @@ class CameraManager(
                             sharpness = sharpness,
                             brightness = brightness,
                             luminanceAnalysis = luminanceAnalysis,
+                            spatialAnalysis = spatialAnalysis,
                             processingTimeMs = processingTimeMs,
                             sharpnessTimeMs = sharpnessTimeMs,
                             brightnessTimeMs = brightnessTimeMs,
                             luminanceTimeMs = luminanceTimeMs,
+                            spatialAnalysisTimeMs = spatialAnalysisTimeMs,
                             width = imageProxy.width,
                             height = imageProxy.height
                         )

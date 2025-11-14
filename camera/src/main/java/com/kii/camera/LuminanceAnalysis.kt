@@ -15,9 +15,11 @@ package com.kii.camera
  * @property clippingRatio Ratio of clipped pixels (255 value) to total pixels (0.0 to 1.0)
  * @property quality Overall lighting quality assessment
  * @property processingTimeMs Time taken to perform the analysis in milliseconds
+ * @property spatialAnalysis Optional spatial brightness analysis (grid-based, center vs edge, etc.)
  *
  * @see LightingQuality
  * @see FrameAnalysisResult
+ * @see SpatialBrightnessAnalysis
  */
 data class LuminanceAnalysis(
     val brightness: Double,
@@ -25,7 +27,8 @@ data class LuminanceAnalysis(
     val darknessRatio: Double,
     val clippingRatio: Double,
     val quality: LightingQuality,
-    val processingTimeMs: Double = 0.0
+    val processingTimeMs: Double = 0.0,
+    val spatialAnalysis: SpatialBrightnessAnalysis? = null
 ) {
     /**
      * Returns true if the frame is underexposed (too dark).
@@ -83,6 +86,12 @@ data class LuminanceAnalysis(
             if (processingTimeMs > 0) {
                 append(" | Time: ${"%.2f".format(processingTimeMs)}ms")
             }
+            spatialAnalysis?.let {
+                append(" | Uniformity: ${(it.brightnessUniformity * 100).toInt()}%")
+                if (it.isBacklit) {
+                    append(" | Backlit")
+                }
+            }
         }
     }
 
@@ -97,6 +106,7 @@ data class LuminanceAnalysis(
         if (darknessRatio != other.darknessRatio) return false
         if (clippingRatio != other.clippingRatio) return false
         if (quality != other.quality) return false
+        if (spatialAnalysis != other.spatialAnalysis) return false
 
         return true
     }
@@ -107,6 +117,7 @@ data class LuminanceAnalysis(
         result = 31 * result + darknessRatio.hashCode()
         result = 31 * result + clippingRatio.hashCode()
         result = 31 * result + quality.hashCode()
+        result = 31 * result + (spatialAnalysis?.hashCode() ?: 0)
         return result
     }
 
